@@ -11,10 +11,12 @@ using UI = Oxide.Plugins.KingdomUI.UIMethods;
 // TODO: Add QuickSmelt functionality
 // TODO: Add quicksmelt configuration options
 
-namespace Oxide.Plugins {
-    [Info("Kingdom Wars", "Pho3niX90", "0.0.1")]
+namespace Oxide.Plugins
+{
+    [Info("Kingdom Wars", "Pho3niX90", "0.0.2")]
     [Description("Custom gamemode that changes values of gathering/smelting/crafting based on a current phase.")]
-    public class KingdomWars : RustPlugin {
+    public class KingdomWars : RustPlugin
+    {
         #region Declaration
 
         // Config, Data
@@ -45,7 +47,8 @@ namespace Oxide.Plugins {
 
         #region Configuration
 
-        private class ConfigFile {
+        private class ConfigFile
+        {
             public TimeSettings TimeSettings;
 
             public UiSettings UiSettings;
@@ -58,7 +61,8 @@ namespace Oxide.Plugins {
             }
         }
 
-        private class UiSettings {
+        private class UiSettings
+        {
             public bool Enabled { get; set; }
             public Rgba PrimaryColor { get; set; }
             public Rgba SecondaryColor { get; set; }
@@ -74,7 +78,8 @@ namespace Oxide.Plugins {
             }
         }
 
-        private class ConfigAnchor {
+        private class ConfigAnchor
+        {
             public Anchor Min { get; set; }
             public Anchor Max { get; set; }
 
@@ -87,7 +92,8 @@ namespace Oxide.Plugins {
             }
         }
 
-        private class TimeSettings {
+        private class TimeSettings
+        {
             [JsonProperty("Build phase length (minutes)")]
             public float Build;
 
@@ -100,7 +106,8 @@ namespace Oxide.Plugins {
             }
         }
 
-        private class Rotor {
+        private class Rotor
+        {
             public float MainHealth;
             public float TailHealth;
 
@@ -135,11 +142,13 @@ namespace Oxide.Plugins {
 
         #region Data
 
-        private class DataFile {
+        private class DataFile
+        {
             public PhaseInfo PhaseInfo = new PhaseInfo();
         }
 
-        private class PhaseInfo {
+        private class PhaseInfo
+        {
             public bool BuildPhase;
             public bool FightPhase;
             public DateTime StartTime;
@@ -160,7 +169,8 @@ namespace Oxide.Plugins {
 
         #region Lang
 
-        private struct Msg {
+        private struct Msg
+        {
             public const string TimeLeft = "TimeLeft";
             public const string BuildPhase = "BuildPhase";
             public const string FightPhase = "FightPhase";
@@ -218,7 +228,7 @@ namespace Oxide.Plugins {
         private void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info) {
             if (info != null && info.InitiatorPlayer != null && entity != null && DFile.PhaseInfo.BuildPhase) {
                 BasePlayer player = info.InitiatorPlayer;
-                if ((entity is BasePlayer)
+                if ((entity is BasePlayer && (entity as BasePlayer).userID > 76560000000000000)
                                 //|| (entity is BaseNpc)
                                 //|| (entity is BaseAnimalNPC)
                                 //|| (entity is BuildingBlock)
@@ -507,8 +517,10 @@ namespace Oxide.Plugins {
     }
 }
 
-namespace Oxide.Plugins.KingdomUI {
-    public class UIMethods {
+namespace Oxide.Plugins.KingdomUI
+{
+    public class UIMethods
+    {
         public static CuiElementContainer Container(string name, string bgColor, Anchor Min, Anchor Max,
             string parent = "Overlay", float fadeOut = 0f, float fadeIn = 0f) {
             var newElement = new CuiElementContainer()
@@ -657,7 +669,8 @@ namespace Oxide.Plugins.KingdomUI {
         }
     }
 
-    public class Anchor {
+    public class Anchor
+    {
         public float X { get; set; }
         public float Y { get; set; }
 
@@ -678,7 +691,8 @@ namespace Oxide.Plugins.KingdomUI {
         }
     }
 
-    public class Rgba {
+    public class Rgba
+    {
         public float R { get; set; }
         public float G { get; set; }
         public float B { get; set; }

@@ -57,7 +57,10 @@ namespace Oxide.Plugins
             Puts($"Damage {info?.damageTypes}");
             MarkDead(player);
         }
-
+        bool CanBeWounded(BasePlayer player, HitInfo info) {
+            Puts($"Can player {player?.displayName} be wounded");
+            return true;
+        }
         #endregion
 
         #region Core

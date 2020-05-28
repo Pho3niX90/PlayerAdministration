@@ -14,7 +14,7 @@ using WebSocketSharp;
 
 namespace Oxide.Plugins
 {
-    [Info("King Score Board", "Pho3niX90", "0.1.6")]
+    [Info("King Score Board", "Pho3niX90", "0.1.7")]
     [Description("Scoring System")]
     public class KingScoreBoard : RustPlugin
     {
@@ -244,21 +244,29 @@ namespace Oxide.Plugins
             BasePlayer Player = plan.GetOwnerPlayer();
             BaseEntity Entity = go.ToBaseEntity();
             if (Entity.ShortPrefabName.Contains("cupboard.tool")) {
-                CreateMarker(Entity);
                 string clan = GetClan(Player.userID);
+
                 if(clan.Trim().IsNullOrEmpty()) {
                     permission.RevokeUserPermission(Player.UserIDString, "whitelist.allowed");
                     Puts($"Should kick {Player.displayName}");
                     Player?.Kick("You have been eliminated!"); ;
                     return;
                 }
+
                 if (_tcs.ContainsKey(clan)) {
                     Puts("Updating clan " + clan + " tc info");
-                    _tcs[clan]++;
+                    if(_tcs[clan] < config.maxTcs) {
+                        _tcs[clan]++;
+                    } else {
+                        UnityEngine.Object.DestroyImmediate(go);
+                        SendReply(Player, $"Maximum of {config.maxTcs} allowed.");
+                        return;
+                    }
                 } else {
                     Puts("Creating clan " + clan + " tc info");
                     _tcs.Add(clan, 1);
                 }
+                CreateMarker(Entity);
             }
         }
 
@@ -1309,6 +1317,8 @@ namespace Oxide.Plugins
             public List<string> discordHooks = new List<string>();
             [JsonProperty(PropertyName = "Tournament Mode")]
             public bool tournamentMode = false;
+            [JsonProperty(PropertyName = "Max TC Per Clan")]
+            public int maxTcs = 1;
         }
         protected override void LoadConfig() {
             base.LoadConfig();

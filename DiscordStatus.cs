@@ -11,7 +11,7 @@ using Random = Oxide.Core.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Discord Status", "Tricky", "2.0.4")]
+    [Info("Discord Status", "Tricky", "2.0.3")]
     [Description("Shows server information as a discord bot status")]
 
     public class DiscordStatus : CovalencePlugin
@@ -92,6 +92,7 @@ namespace Oxide.Plugins
             Discord.CreateClient(this, config.BotToken);
 
             timer.Every(config.UpdateInterval, () => UpdateStatus());
+            timer.Every(600, () => Reload());
         }
 
         private void Unload() => Discord.CloseClient(Client);
@@ -178,7 +179,9 @@ namespace Oxide.Plugins
             return message;
         }
 
-        private int GetAuthCount() => (int) DiscordAuth.Call("API_GetAuthCount");
+        private int GetAuthCount() => (int)DiscordAuth.Call("API_GetAuthCount");
+
+        private void Reload() => server.Command($"oxide.reload {Name}");
         #endregion
     }
 }

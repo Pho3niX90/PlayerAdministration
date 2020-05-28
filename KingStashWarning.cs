@@ -21,7 +21,7 @@ namespace Oxide.Plugins {
 
         #region Global Vars
         const string PermissionStash = "kingtashwarning.admin";
-        ulong IcefuseSteamID = 76561199044451528L;
+        ulong KingSteamID = 76561199044451528L;
         private KingStashWarningConfig cfg;
         public List<ulong> StashUsers = new List<ulong>();
         #endregion
@@ -31,9 +31,6 @@ namespace Oxide.Plugins {
         void Init() {
             cfg = new KingStashWarningConfig(this);
             if (!permission.PermissionExists(PermissionStash, this)) permission.RegisterPermission(PermissionStash, this);
-            if (covalence.Server.Name.Contains("King")) {
-                this.IcefuseSteamID = 76561199044451528L;
-            }
         }
 
         #endregion
@@ -61,7 +58,7 @@ namespace Oxide.Plugins {
 
             if (stash.OwnerID == player.userID && cfg.DiscordIgnoreOwnStash) return null;
 
-            if (stash.OwnerID.Equals(IcefuseSteamID)) {
+            if (stash.OwnerID.Equals(KingSteamID)) {
                 if (cfg.ShowServerStashWarning)
                     SendReplyWithIcon(player, GetMsg("Stash Found Warning"));
                 deleteContents = true;
@@ -108,7 +105,7 @@ namespace Oxide.Plugins {
 
             SendReplyWithIcon(player, "Stash Placed");
             stash.SetFlag(BaseEntity.Flags.Reserved5, true);
-            stash.OwnerID = IcefuseSteamID;
+            stash.OwnerID = KingSteamID;
             var contents = new StringBuilder();
 
             for (var i = 0; i < Random.Range(1, 6); i++) {
@@ -193,7 +190,7 @@ namespace Oxide.Plugins {
                 msg = msg.Replace("{" + cnt + "}", arg.ToString());
                 cnt++;
             }
-            Player.Reply(player, msg, IcefuseSteamID);
+            Player.Reply(player, msg, KingSteamID);
         }
 
         void ToggleStashPlacement(BasePlayer player) {
