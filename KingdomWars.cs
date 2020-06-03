@@ -1,5 +1,6 @@
 using Newtonsoft.Json;
 using Oxide.Core;
+using Oxide.Core.Plugins;
 using Oxide.Game.Rust.Cui;
 using System;
 using System.Collections.Generic;
@@ -13,7 +14,7 @@ using UI = Oxide.Plugins.KingdomUI.UIMethods;
 
 namespace Oxide.Plugins
 {
-    [Info("Kingdom Wars", "Pho3niX90", "0.0.2")]
+    [Info("Kingdom Wars", "Pho3niX90", "0.0.3")]
     [Description("Custom gamemode that changes values of gathering/smelting/crafting based on a current phase.")]
     public class KingdomWars : RustPlugin
     {
@@ -43,6 +44,7 @@ namespace Oxide.Plugins
         private CuiElementContainer CachedContainer;
         private Dictionary<ulong, BasePlayer> UiPlayers = new Dictionary<ulong, BasePlayer>();
 
+        [PluginReference] Plugin Clans;
         #endregion
 
         #region Configuration
@@ -231,7 +233,7 @@ namespace Oxide.Plugins
                 if ((entity is BasePlayer && (entity as BasePlayer).userID > 76560000000000000)
                                 //|| (entity is BaseNpc)
                                 //|| (entity is BaseAnimalNPC)
-                                //|| (entity is BuildingBlock)
+                                || (entity is BuildingBlock && !IsMemberOrAlly(entity.OwnerID.ToString(), info.InitiatorPlayer.UserIDString))
                                 || (entity.GetComponent<Deployable>() != null)
                                 //|| entity.PrefabName.Contains("barrel")
                                 || (entity is BaseHelicopter)
@@ -444,6 +446,12 @@ namespace Oxide.Plugins
                 cnt++;
             }
             Player.Reply(player, msg, 76561199044451528L);
+        }
+
+        bool IsMemberOrAlly(string userid1, string userid2) {
+            if (userid1.Equals(userid2)) return true;
+            return Clans.Call<bool>("IsMemberOrAlly", userid1, userid2);
+            // bool IsMemberOrAlly(string playerId, string otherId) // Check if 2 players are clan mates or clan allies
         }
         #endregion
 

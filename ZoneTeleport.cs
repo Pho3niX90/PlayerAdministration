@@ -104,8 +104,6 @@ namespace Oxide.Plugins {
         void OnEnterZone(string ZoneID, BasePlayer player) {
             if (ContainsZone(ZoneID)) {
                 ZSpawn spawnFile = zoneToSpawn.Find(x => x.zoneID == ZoneID);
-                Puts($"{spawnFile.zoneID} {spawnFile.arenaName}");
-
                 if (spawnFile.isArena) {
                     player.SendConsoleCommand($"chat.say \"/join {spawnFile.arenaName}\"");
                 } else {

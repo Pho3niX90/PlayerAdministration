@@ -1178,7 +1178,7 @@ namespace Oxide.Plugins {
         string GetTimeLeft(int num, string suff) => num > 0 ? $"{num}{suff}" : "";
 
         private string GetUIMessage(BasePlayer player, Kit kit, KitInfo kitInfo) {
-            if (HasPermission(player, kit.permission) == false) {
+            if (!HasPermission(player, kit.permission)) {
                 if (kit.showWithoutPermission == false) {
                     return null;
                 }

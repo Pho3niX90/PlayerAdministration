@@ -586,7 +586,11 @@ namespace Oxide.Plugins
         #region Helpers
         private void GetTargetEntity(BasePlayer player) {
             bool flag = Physics.Raycast(player.eyes.HeadRay(), out raycastHit, 2f, Rust.Layers.Solid);
+            if (!flag) return;
+
             BaseEntity entity = raycastHit.GetEntity();
+            if (entity == null) return;
+
             MiniCopter mini = ((entity is MiniCopter) ? entity : entity.GetParentEntity()) as MiniCopter;
 
             if (mini != null) {

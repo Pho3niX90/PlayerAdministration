@@ -14,7 +14,7 @@ using WebSocketSharp;
 
 namespace Oxide.Plugins
 {
-    [Info("King Score Board", "Pho3niX90", "0.1.7")]
+    [Info("King Score Board", "Pho3niX90", "0.1.95")]
     [Description("Scoring System")]
     public class KingScoreBoard : RustPlugin
     {
@@ -26,9 +26,9 @@ namespace Oxide.Plugins
         Dictionary<ulong, string> openPanels;
         Dictionary<ulong, HitInfo> _lastWounded;
         Dictionary<string, int> lineNum;
+        Dictionary<string, uint> clanTcKiller;
         //List<uint> cratesFound = new List<uint>();
         Dictionary<uint, ulong> cratesLooted = new Dictionary<uint, ulong>();
-        Dictionary<uint, MapMarkerGenericRadius> _markers;
         Dictionary<string, int> _tcs;
         string mapCreationDate;
 
@@ -37,7 +37,6 @@ namespace Oxide.Plugins
         }
 
         void Loaded() {
-            _markers = new Dictionary<uint, MapMarkerGenericRadius>();
             lineNum = new Dictionary<string, int>();
             _clansScores = new Dictionary<string, ClanScoreboard>();
             _playerScores = new Dictionary<ulong, PlayerScoreboard>();
@@ -75,11 +74,8 @@ namespace Oxide.Plugins
             }
 
             if (config.tournamentMode)
-                foreach (MapMarkerGenericRadius marker in _markers.Values) {
-                    marker.Kill();
-                }
+                DestroyAllMarkers();
 
-            _markers.Clear();
 
             SaveData();
 
@@ -93,7 +89,7 @@ namespace Oxide.Plugins
         //    Vis.Entities(pos, 20f, crates);
         //
         //    foreach (var crate in crates) {
-        //        cratesFound.Add(crate.net.ID);
+        //        cratesFound.TryAdd(crate.net.ID);
         //    }
         //}
 
@@ -101,7 +97,7 @@ namespace Oxide.Plugins
             ulong playerId = player.userID;
             if (playerId == 0) return;
             string clan = GetClan(playerId);
-            
+
             int type = CrateType(entity);
             uint crateId = entity.net.ID;
             if (cratesLooted.ContainsKey(crateId)) return;
@@ -109,7 +105,7 @@ namespace Oxide.Plugins
 
             if (!_clansScores.ContainsKey(clan)) {
                 ClanScoreboard newClan = new ClanScoreboard(clan);
-                _clansScores.Add(clan, newClan);
+                _clansScores.TryAdd(clan, newClan);
             }
 
             if (type == 0) {
@@ -132,7 +128,7 @@ namespace Oxide.Plugins
             }
 
             DiscordReport($"{playerId} opened a {entity.ShortPrefabName}");
-            cratesLooted.Add(crateId, player.userID);
+            cratesLooted.TryAdd(crateId, player.userID);
         }
 
         int CrateType(BaseEntity entity) {
@@ -165,10 +161,6 @@ namespace Oxide.Plugins
             _clansScores.Clear();
             _playerScores.Clear();
             _tcs.Clear();
-            //cratesFound.Clear();
-            _lastWounded.Clear();
-            _markers.Clear();
-            cratesLooted.Clear();
         }
 
         void OnPlayerConnected(BasePlayer player) {
@@ -176,12 +168,8 @@ namespace Oxide.Plugins
             string clanTag = GetClan(player.userID);
             InitClan(clanTag);
             if (config.tournamentMode) {
-                foreach (var x in UnityEngine.Object.FindObjectsOfType<MapMarkerGenericRadius>().ToList()) {
-                    DestroyMarker(x);
-                }
-                foreach (var x in UnityEngine.Object.FindObjectsOfType<BuildingPrivlidge>().ToList()) {
-                    CreateMarker(x);
-                }
+                DestroyAllMarkers();
+                CreateAllMarkers();
             }
         }
 
@@ -192,14 +180,14 @@ namespace Oxide.Plugins
                 if (_lastWounded.ContainsKey(userId)) {
                     _lastWounded[userId] = hitInfo;
                 } else {
-                    _lastWounded.Add(userId, hitInfo);
+                    _lastWounded.TryAdd(userId, hitInfo);
                 }
             } else if (victimEntity is BaseHelicopter) {
                 if (hitInfo?.InitiatorPlayer != null) {
                     if (_lastWounded.ContainsKey(victimEntity.net.ID)) {
                         _lastWounded[victimEntity.net.ID] = hitInfo;
                     } else {
-                        _lastWounded.Add(victimEntity.net.ID, hitInfo);
+                        _lastWounded.TryAdd(victimEntity.net.ID, hitInfo);
                     }
                 }
             }
@@ -208,8 +196,10 @@ namespace Oxide.Plugins
         private void OnEntityDeath(BuildingPrivlidge cupboard, HitInfo info) {
             BasePlayer attacker = info?.InitiatorPlayer;
             if (attacker != null) {
-                if (cupboard.OwnerID != 0 && !IsMemberOrAlly(attacker.UserIDString, cupboard.OwnerID.ToString()))
+                if (cupboard.OwnerID != 0 && !IsMemberOrAlly(attacker.UserIDString, cupboard.OwnerID.ToString())) {
                     AddTCKill(attacker.userID);
+                    clanTcKiller.TryAdd(GetClan(attacker.userID), cupboard.net.ID);
+                }
             }
         }
 
@@ -225,9 +215,18 @@ namespace Oxide.Plugins
                 Puts($"Creating clan {clan} tc info, from {old} to {_tcs[clan]}");
                 if (_tcs[clan] < 1) {
                     JArray members = GetClanMembers(clan);
-                    foreach (string userid in members) {
-                        BasePlayer.FindByID(ulong.Parse(userid)).Kick("You have been eliminated!");
-                        permission.GrantUserPermission(userid, "whitelist.kicked", null);
+                    if (members == null && members.Count == 0) {
+                        BasePlayer Player = BasePlayer.FindByID(cupboard.OwnerID);
+                        SendReply(Player, "You aren't in a clan");
+                        MsgAdminsOnline($"Player `{Player.displayName} ({Player.userID})` is not part of a clan");
+                    } else {
+                        foreach (string userid in members) {
+                            if (userid == null || userid.IsNullOrEmpty()) return;
+                            BasePlayer.FindByID(ulong.Parse(userid))?.Kick("You have been eliminated!");
+                            string clantagattack = GetClan((cupboard.lastAttacker as BasePlayer).UserIDString);
+                            PrintToChat($"Team <color=red>{clan}</color> has been eliminated by <color=red>{clantagattack}</color>!");
+                            permission.GrantUserPermission(userid, "whitelist.kicked", null);
+                        }
                     }
                 }
             }
@@ -235,7 +234,8 @@ namespace Oxide.Plugins
 
         JArray GetClanMembers(string clan) {
             JObject clanData = GetClanData(clan);
-            return clanData.GetValue("members") as JArray;
+            Puts(clanData.ToString());
+            return clanData?.GetValue("members") as JArray;
         }
 
         void OnEntityBuilt(Planner plan, GameObject go) {
@@ -244,9 +244,14 @@ namespace Oxide.Plugins
             BasePlayer Player = plan.GetOwnerPlayer();
             BaseEntity Entity = go.ToBaseEntity();
             if (Entity.ShortPrefabName.Contains("cupboard.tool")) {
+                BaseEntity TC = Entity as BuildingPrivlidge;
                 string clan = GetClan(Player.userID);
+                if (clan == null || clan.Trim().IsNullOrEmpty()) {
+                    SendReply(Player, "You aren't in a clan");
+                    MsgAdminsOnline($"Player `{Player.displayName} ({Player.userID})` is not part of a clan");
+                }
 
-                if(clan.Trim().IsNullOrEmpty()) {
+                if (clan.Trim().IsNullOrEmpty()) {
                     permission.RevokeUserPermission(Player.UserIDString, "whitelist.allowed");
                     Puts($"Should kick {Player.displayName}");
                     Player?.Kick("You have been eliminated!"); ;
@@ -255,30 +260,31 @@ namespace Oxide.Plugins
 
                 if (_tcs.ContainsKey(clan)) {
                     Puts("Updating clan " + clan + " tc info");
-                    if(_tcs[clan] < config.maxTcs) {
+
+                    if (_tcs[clan] < config.maxTcs) {
                         _tcs[clan]++;
                     } else {
-                        UnityEngine.Object.DestroyImmediate(go);
                         SendReply(Player, $"Maximum of {config.maxTcs} allowed.");
+                        _tcs[clan]++;
+                        TC.Kill();
                         return;
                     }
+
                 } else {
                     Puts("Creating clan " + clan + " tc info");
-                    _tcs.Add(clan, 1);
+                    _tcs.TryAdd(clan, 1);
                 }
                 CreateMarker(Entity);
             }
         }
 
         void DestroyMarker(BaseEntity entity) {
-            if (_markers.ContainsKey(entity.net.ID)) {
-                _markers[entity.net.ID].Kill();
-                _markers.Remove(entity.net.ID);
-            }
+            var TCs = BaseNetworkable.FindObjectsOfType<MapMarkerGenericRadius>().Where(tc => tc.net.ID == entity.net.ID);
+            foreach (var tc in TCs) tc.Kill();
         }
 
         void CreateAllMarkers() {
-            foreach (var x in UnityEngine.Object.FindObjectsOfType<BuildingPrivlidge>().ToList()) {
+            foreach (var x in BaseNetworkable.FindObjectsOfType<MapMarkerGenericRadius>().ToList()) {
 
                 string clan = GetClan(x.OwnerID);
                 if (!clan.IsNullOrEmpty()) {
@@ -287,7 +293,7 @@ namespace Oxide.Plugins
                         _tcs[clan]++;
                     } else {
                         Puts("Creating clan " + clan + " tc info");
-                        _tcs.Add(clan, 1);
+                        _tcs.TryAdd(clan, 1);
                     }
                 }
                 CreateMarker(x);
@@ -295,7 +301,7 @@ namespace Oxide.Plugins
         }
 
         void CreateMarker(BaseEntity entity) {
-            MapMarkerGenericRadius marker2 = GameManager.server.CreateEntity("assets/prefabs/tools/map/genericradiusmarker.prefab", entity.transform.position).GetComponent<MapMarkerGenericRadius>();
+            MapMarkerGenericRadius marker2 = GameManager.server.CreateEntity("assets/prefabs/tools/map/genericradiusmarker.prefab", entity.transform.position) as MapMarkerGenericRadius;
             marker2.alpha = 0.8f;
             marker2.color1 = Color.red;
             marker2.color2 = Color.green;
@@ -303,12 +309,10 @@ namespace Oxide.Plugins
             marker2.enabled = true;
             marker2.Spawn();
             marker2.SendUpdate();
-            _markers.Add(entity.net.ID, marker2);
         }
 
         void DestroyAllMarkers() {
-            _markers.Clear();
-            foreach (var x in UnityEngine.Object.FindObjectsOfType<MapMarkerGenericRadius>().ToList()) {
+            foreach (var x in BaseNetworkable.FindObjectsOfType<MapMarkerGenericRadius>().ToList()) {
                 x.Kill();
             }
         }
@@ -348,9 +352,9 @@ namespace Oxide.Plugins
         }
 
         object OnPlayerDeath(BasePlayer victim, HitInfo info) {
-            if (victim == null || !(victim is BasePlayer) && !(victim is HTNPlayer || victim is NPCPlayer)) return null;
+            if (victim == null || !(victim is BasePlayer) || victim.userID < 76560000000000000) return null;
             BasePlayer attacker = info?.Initiator?.ToPlayer();
-
+            if (victim.userID == attacker.userID) return null;
             if (attacker != null && attacker is BasePlayer && !(victim is HTNPlayer || victim is NPCPlayer)) {
                 try {
                     if (!IsMemberOrAlly(attacker.UserIDString, victim.UserIDString))
@@ -361,7 +365,8 @@ namespace Oxide.Plugins
             } else if (_lastWounded.ContainsKey(victim.userID)) {
                 HitInfo hitInfo = _lastWounded[victim.userID];
                 if (hitInfo?.InitiatorPlayer != null && hitInfo?.InitiatorPlayer is BasePlayer && !(hitInfo?.InitiatorPlayer is NPCPlayer)) {
-                    AddKill(hitInfo.InitiatorPlayer.userID);
+                    if (!IsMemberOrAlly(hitInfo?.InitiatorPlayer.UserIDString, victim.UserIDString))
+                        AddKill(hitInfo.InitiatorPlayer.userID);
                     _lastWounded.Remove(victim.userID);
                 }
             }
@@ -396,6 +401,7 @@ namespace Oxide.Plugins
         }
 
         bool IsMemberOrAlly(string userid1, string userid2) {
+            if (userid1.Equals(userid2)) return true;
             return Clans.Call<bool>("IsMemberOrAlly", userid1, userid2);
             // bool IsMemberOrAlly(string playerId, string otherId) // Check if 2 players are clan mates or clan allies
         }
@@ -410,8 +416,12 @@ namespace Oxide.Plugins
                 } else {
                     ClanScoreboard newClan = new ClanScoreboard(clan);
                     newClan.Kills++;
-                    _clansScores.Add(clan, newClan);
+                    _clansScores.TryAdd(clan, newClan);
                 }
+            } else {
+                BasePlayer player = BasePlayer.FindByID(playerId);
+                SendReply(player, "You aren't in a clan");
+                MsgAdminsOnline($"Player `{player.displayName} ({playerId})` is not part of a clan");
             }
         }
 
@@ -421,12 +431,13 @@ namespace Oxide.Plugins
             _AddApcKill(playerId);
 
             if (clan != null) {
+                PrintToChat($"Team {clan} has destroy Bradley!");
                 if (_clansScores.ContainsKey(clan)) {
                     _clansScores[clan].Bradley++;
                 } else {
                     ClanScoreboard newClan = new ClanScoreboard(clan);
                     newClan.Bradley++;
-                    _clansScores.Add(clan, newClan);
+                    _clansScores.TryAdd(clan, newClan);
                 }
             }
             DiscordReport($"{playerId} killed an APC");
@@ -437,12 +448,13 @@ namespace Oxide.Plugins
             string clan = GetClan(playerId);
             _AddHeliKill(playerId);
             if (clan != null) {
+                PrintToChat($"Team {clan} has destroy the Patrol Helicopter!");
                 if (_clansScores.ContainsKey(clan)) {
                     _clansScores[clan].Helis++;
                 } else {
                     ClanScoreboard newClan = new ClanScoreboard(clan);
                     newClan.Helis++;
-                    _clansScores.Add(clan, newClan);
+                    _clansScores.TryAdd(clan, newClan);
                 }
             }
             DiscordReport($"{playerId} killed a Heli");
@@ -466,7 +478,7 @@ namespace Oxide.Plugins
                     } else {
                         newClan.Scientist++;
                     }
-                    _clansScores.Add(clan, newClan);
+                    _clansScores.TryAdd(clan, newClan);
                 }
             }
             DiscordReport($"{playerId} killed a scientist");
@@ -482,7 +494,7 @@ namespace Oxide.Plugins
                 } else {
                     ClanScoreboard newClan = new ClanScoreboard(clan);
                     newClan.TC++;
-                    _clansScores.Add(clan, newClan);
+                    _clansScores.TryAdd(clan, newClan);
                 }
             }
             DiscordReport($"{playerId} destroyed a TC");
@@ -498,7 +510,7 @@ namespace Oxide.Plugins
                 } else {
                     ClanScoreboard newClan = new ClanScoreboard(clan);
                     newClan.Deaths++;
-                    _clansScores.Add(clan, newClan);
+                    _clansScores.TryAdd(clan, newClan);
                 }
             }
             DiscordReport($"{playerId} died");
@@ -514,7 +526,7 @@ namespace Oxide.Plugins
                 } else {
                     ClanScoreboard newClan = new ClanScoreboard(clan);
                     newClan.Revives++;
-                    _clansScores.Add(clan, newClan);
+                    _clansScores.TryAdd(clan, newClan);
                 }
             }
         }
@@ -529,7 +541,7 @@ namespace Oxide.Plugins
                 } else {
                     ClanScoreboard newClan = new ClanScoreboard(clan);
                     newClan.Downs++;
-                    _clansScores.Add(clan, newClan);
+                    _clansScores.TryAdd(clan, newClan);
                 }
             }
         }
@@ -594,7 +606,7 @@ namespace Oxide.Plugins
             string playerClan = GetClan(playerId);
             if (!_playerScores.ContainsKey(playerId)) {
                 PlayerScoreboard pScore = new PlayerScoreboard(playerId, playerClan);
-                _playerScores.Add(playerId, pScore);
+                _playerScores.TryAdd(playerId, pScore);
             }
             InitClan(playerClan);
         }
@@ -602,10 +614,10 @@ namespace Oxide.Plugins
         void InitClan(string clanTag) {
             if (clanTag != null && !_clansScores.ContainsKey(clanTag)) {
                 ClanScoreboard cScore = new ClanScoreboard(clanTag);
-                _clansScores.Add(clanTag, cScore);
+                _clansScores.TryAdd(clanTag, cScore);
             }
             if (clanTag != null && !_tcs.ContainsKey(clanTag)) {
-                _tcs.Add(clanTag, 0);
+                _tcs.TryAdd(clanTag, 0);
             }
         }
 
@@ -613,7 +625,11 @@ namespace Oxide.Plugins
         PlayerScoreboard GetPlayerStats(ulong playerId) => _playerScores[playerId];
 
         #region Helpers
-
+        void MsgAdminsOnline(string msg) {
+            foreach (var admin in BasePlayer.activePlayerList.Where(x => x.IsAdmin)) {
+                SendReply(admin, msg);
+            }
+        }
         #endregion
 
         #region Chat Commands
@@ -678,6 +694,7 @@ namespace Oxide.Plugins
                                 permission.RevokeUserPermission(userid, "whitelist.allowed");
                                 Puts($"Should kick {player.displayName}");
                                 player?.Kick("You have been eliminated!"); ;
+                                PrintToChat($"Team {clan} has been eliminated!");
                             }
                         }
                     }
@@ -712,35 +729,11 @@ namespace Oxide.Plugins
             } catch (Exception e) {
 
             }
-
-            try {
-                Interface.Oxide.DataFileSystem.WriteObject<Dictionary<uint, MapMarkerGenericRadius>>($"ScoreBoard/markers", _markers, true);
-            } catch (Exception e) {
-
-            }
-
-            try {
-                Interface.Oxide.DataFileSystem.WriteObject<Dictionary<uint, ulong>>($"ScoreBoard/cratesLooted_{mapCreationDate}", cratesLooted, true);
-            } catch (Exception e) {
-
-            }
         }
 
         void LoadData(bool reset = false) {
             try {
                 _playerScores = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<ulong, PlayerScoreboard>>($"ScoreBoard/allPlayers_{mapCreationDate}");
-            } catch (Exception e) {
-
-            }
-
-            try {
-                _markers = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<uint, MapMarkerGenericRadius>>($"ScoreBoard/markers");
-            } catch (Exception e) {
-
-            }
-
-            try {
-                cratesLooted = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<uint, ulong>>($"ScoreBoard/cratesLooted_{mapCreationDate}");
             } catch (Exception e) {
 
             }
@@ -1137,22 +1130,22 @@ namespace Oxide.Plugins
             string PanelAnchorMax = isExpanded ? "0.995 0.960" : "0.995 0.960"; //left digit is viewheight from left, right digit is Y axis, viewheight from bottom
 
             Dictionary<string, HSize> headerSizes = new Dictionary<string, HSize>();
-            headerSizes.Add("#", isExpanded ? new HSize(0.05, 0.08) : new HSize(0.05, 0.12));
-            headerSizes.Add("Clan", isExpanded ? new HSize(0.12, 0.37) : new HSize(0.15, 0.46));
+            headerSizes.TryAdd("#", isExpanded ? new HSize(0.05, 0.08) : new HSize(0.05, 0.12));
+            headerSizes.TryAdd("Clan", isExpanded ? new HSize(0.12, 0.37) : new HSize(0.15, 0.46));
 
             if (isExpanded) {
-                headerSizes.Add("H", new HSize(0.39, 0.44));
-                headerSizes.Add("B", new HSize(0.46, 0.51));
-                headerSizes.Add("S", new HSize(0.53, 0.58));
+                headerSizes.TryAdd("H", new HSize(0.39, 0.44));
+                headerSizes.TryAdd("B", new HSize(0.46, 0.51));
+                headerSizes.TryAdd("S", new HSize(0.53, 0.58));
             }
 
-            headerSizes.Add("K", isExpanded ? new HSize(0.60, 0.65) : new HSize(0.49, 0.64));
-            headerSizes.Add("D", isExpanded ? new HSize(0.67, 0.72) : new HSize(0.67, 0.80));
-            headerSizes.Add("KDR", isExpanded ? new HSize(0.74, 0.81) : new HSize(0.83, 1.00));
+            headerSizes.TryAdd("K", isExpanded ? new HSize(0.60, 0.65) : new HSize(0.49, 0.64));
+            headerSizes.TryAdd("D", isExpanded ? new HSize(0.67, 0.72) : new HSize(0.67, 0.80));
+            headerSizes.TryAdd("KDR", isExpanded ? new HSize(0.74, 0.81) : new HSize(0.83, 1.00));
 
             if (isExpanded) {
-                headerSizes.Add("TC", new HSize(0.83, 0.88));
-                headerSizes.Add("Score", new HSize(0.90, 1.00));
+                headerSizes.TryAdd("TC", new HSize(0.83, 0.88));
+                headerSizes.TryAdd("Score", new HSize(0.90, 1.00));
             }
 
             if (cScoreSorted.Count > 0) {
@@ -1273,14 +1266,14 @@ namespace Oxide.Plugins
             }
             Puts("Total count " + (cScoreSorted.Count + pScoreSorted.Count));
             if ((cScoreSorted.Count + pScoreSorted.Count) > 0 && !openPanels.ContainsKey(player.userID)) {
-                openPanels.Add(player.userID, "open");
+                openPanels.TryAdd(player.userID, "open");
                 CuiHelper.AddUi(player, container);
                 timer.Once(10, () => DestroyUI(player));
             }
         }
 
         void _UILineNum(string panel) {
-            if (!lineNum.ContainsKey(panel)) lineNum.Add(panel, 0);
+            if (!lineNum.ContainsKey(panel)) lineNum.TryAdd(panel, 0);
             else lineNum[panel] = 0;
         }
 

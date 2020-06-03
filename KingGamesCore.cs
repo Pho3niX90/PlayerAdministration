@@ -8,16 +8,17 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEngine;
 
-namespace Oxide.Plugins {
-    [Info("Scrim Core", "Pho3niX90", "0.0.3")]
+namespace Oxide.Plugins
+{
+    [Info("Scrim Core", "Pho3niX90", "0.0.8")]
     [Description("")]
-    public class KingGamesCore : RustPlugin {
+    public class KingGamesCore : RustPlugin
+    {
         [PluginReference] Plugin Spawns;
         #region Vars
 
         private static int getMask => LayerMask.GetMask("Construction", "Terrain");
         private static KingGamesCore plugin;
-        List<ulong> autoReady = new List<ulong>();
 
         #endregion
 
@@ -125,7 +126,7 @@ namespace Oxide.Plugins {
                     API_LeaveMiniGame(player);
                     break;
 
-                
+
                 case "r":
                 case "ready":
                     API_ReadyToMiniGame(player);
@@ -144,13 +145,9 @@ namespace Oxide.Plugins {
         }
 
         private static void CheckDamage(BasePlayer player, HitInfo info) {
-            if (info == null) {
-                return;
-            }
-
-            var initiator = info.InitiatorPlayer;
-            if (API_CanGetDamageFrom(player, initiator, info) == false) {
-                info.damageTypes = new DamageTypeList();
+            var initiator = info?.InitiatorPlayer;
+            if (!API_CanGetDamageFrom(player, initiator, info)) {
+                info.damageTypes.ScaleAll(0f);
             }
         }
 
@@ -163,7 +160,7 @@ namespace Oxide.Plugins {
 
         private void AutoRespawn(BasePlayer player) {
             timer.Once(0.2f, () => {
-                if (player.IsValid() == true && player.IsDead() == true && player.IsConnected == true) {
+                if (player.IsValid() && player.IsDead() && player.IsConnected) {
                     player.Respawn();
                 }
             });
@@ -171,11 +168,11 @@ namespace Oxide.Plugins {
 
         private void AutoWakeup(BasePlayer player) {
             timer.Once(0.2f, () => {
-                if (player.IsValid() == false || player.IsConnected == false || player.IsDead() == true) {
+                if (!player.IsValid() || !player.IsConnected || player.IsDead()) {
                     return;
                 }
 
-                if (player.IsReceivingSnapshot == true) {
+                if (player.IsReceivingSnapshot) {
                     timer.Once(1f, () => AutoWakeup(player));
                     return;
                 }
@@ -185,11 +182,9 @@ namespace Oxide.Plugins {
         }
 
         private static void TickRemoveSleepers() {
-            var sleepers = UnityEngine.Object.FindObjectsOfType<BasePlayer>().Where(x => x.IsSleeping() && x.IsConnected == false);
+            var sleepers = UnityEngine.Object.FindObjectsOfType<BasePlayer>().Where(x => x.IsSleeping() && !x.IsConnected);
             foreach (var sleeper in sleepers) {
-                CleanContainer(sleeper.inventory.containerBelt);
-                CleanContainer(sleeper.inventory.containerMain);
-                CleanContainer(sleeper.inventory.containerWear);
+                sleeper.inventory.Strip();
                 sleeper.Kill();
             }
         }
@@ -201,7 +196,7 @@ namespace Oxide.Plugins {
             player.Teleport(position);
             player.UpdateNetworkGroup();
             player.SendNetworkUpdateImmediate();
-            player.ClientRPCPlayer(null, player, "StartLoading");
+            //player.ClientRPCPlayer(null, player, "StartLoading");
             player.SendFullSnapshot();
         }
 
@@ -213,16 +208,16 @@ namespace Oxide.Plugins {
 
         private void RefreshPlayer(BasePlayer player) {
             Puts($"Refreshing player {player.displayName}");
-            if(player.IsConnected == false) {
+            if (!player.IsConnected) {
                 Puts($"Player either not connected");
                 return;
             }
-            if (player.IsAlive() == false) {
+            if (!player.IsAlive()) {
                 Puts($"Player either not alive");
                 return;
             }
 
-            if (player.IsWounded() == true) {
+            if (player.IsWounded()) {
                 player.StopWounded();
             }
 
@@ -239,7 +234,7 @@ namespace Oxide.Plugins {
 
             // --- Position --- //
             var position = GetSpawnPosition(player);
-            if (player.IsAlive() == true) {
+            if (player.IsAlive()) {
                 Puts($"Teleporting {player.displayName} to {position}");
                 Teleport(player, position);
             } else {
@@ -254,10 +249,8 @@ namespace Oxide.Plugins {
                 kitName = config.lobbyKit;
             }
 
+            player.inventory.Strip();
             timer.Once(0.2f, () => {
-                CleanContainer(player.inventory.containerBelt);
-                CleanContainer(player.inventory.containerMain);
-                CleanContainer(player.inventory.containerWear);
                 player.ConsoleMessage($"Giving player kit '{kitName}'");
                 Interface.CallHook("GiveKit", player, kitName);
                 if (kitNameClothing != null) {
@@ -286,6 +279,8 @@ namespace Oxide.Plugins {
             Server.Command("env.time 12");
             Server.Command("weather.fog 0");
             Server.Command("weather.rain 0");
+            Server.Command("antihack.terrain_protection 0");
+            Server.Command("antihack.terrain_kill false");
         }
 
         private static Vector3 GetLobbyPosition() {
@@ -302,7 +297,7 @@ namespace Oxide.Plugins {
                 var position = value.Key;
                 var gameName = value.Value;
                 var info = string.Empty;
-                if (games.TryGetValue(gameName, out info) == true) {
+                if (games.TryGetValue(gameName, out info)) {
                     result.Add(position, info);
                 }
             }
@@ -336,12 +331,14 @@ namespace Oxide.Plugins {
         #region Configuration | 2.0.0
 
         private static ConfigData config = new ConfigData();
-        private class RespawnInfo {
+        private class RespawnInfo
+        {
             public Vector3 position;
             public string kitName;
             public string kitNameClothing;
         }
-        private class ConfigData {
+        private class ConfigData
+        {
             [JsonProperty(PropertyName = "Sleepers remove cycle")]
             public int sleepersRemoveCycle = 300;
 
@@ -416,22 +413,27 @@ namespace Oxide.Plugins {
 
         private static bool API_CanGetDamageFrom(BasePlayer victim, BasePlayer initiator, HitInfo info) {
 
-            if (initiator == null) {
-                plugin.Puts("[KGC] Can't get damage because: initiator == null");
-                return false;
-            }
+            //Below must be handled by event to check if players are participating
+            //if (initiator == null) {
+            //    plugin.Puts("[KGC] Can't get damage because: initiator == null");
+            //    return false;
+            //}
+            //
+            //if (info == null) {
+            //    plugin.Puts("[KGC] Can't get damage because: info == null");
+            //    return false;
+            //}
 
             if (victim == initiator) {
-                plugin.Puts("[KGC] Can get damage because: victim == initiator");
+                //plugin.Puts("[KGC] Can get damage because: victim == initiator");
                 return true;
             }
 
             var obj = Interface.CallHook(nameof(CanGetDamageFrom), victim, initiator, info);
             if (obj != null) {
-                plugin.Puts($"[KGC] Can get damage because: {obj}");
-                return true;
+                //plugin.Puts($"[KGC] Can't get damage because: {obj}");
+                return false;
             }
-            
             return true;
         }
 
@@ -499,14 +501,13 @@ namespace Oxide.Plugins {
         #region UI
         UIColor shadowColor = new UIColor(0.1, 0.1, 0.1, 0.8);
         UIColor noticeColor = new UIColor(0.85, 0.85, 0.85, 0.1);
-        int SimpleUI_FontSize = 30;
-        float SimpleUI_Top = 0.1f;
-        float SimpleUI_Left = 0.1f;
-        float SimpleUI_MaxWidth = 0.8f;
-        float SimpleUI_MaxHeight = 0.05f;
-        float SimpleUI_HideTimer = 2;
-        List<string> tags = new List<string>
-{
+        int SimpleUI_FontSize = 150;
+        float SimpleUI_Top = 0f;
+        float SimpleUI_Left = 0f;
+        float SimpleUI_MaxWidth = 1f;
+        float SimpleUI_MaxHeight = 1f;
+        const float SimpleUI_HideTimer = 0.9f;
+        List<string> tags = new List<string> {
             "</color>",
             "</size>",
             "<i>",
@@ -514,42 +515,31 @@ namespace Oxide.Plugins {
             "<b>",
             "</b>"
         };
-        List<Regex> regexTags = new List<Regex>
-{
+
+        List<Regex> regexTags = new List<Regex> {
             new Regex(@"<color=.+?>", RegexOptions.Compiled),
             new Regex(@"<size=.+?>", RegexOptions.Compiled)
         };
-        Dictionary<BasePlayer, Timer> timers = new Dictionary<BasePlayer, Timer>();
 
-        void UIMessage(BasePlayer player, string message) {
-            bool replaced = false;
-            float fadeIn = 0.2f;
-
-            Timer playerTimer;
-            timers.TryGetValue(player, out playerTimer);
-
-            if (playerTimer != null && !playerTimer.Destroyed) {
-                playerTimer.Destroy();
-                fadeIn = 0.1f;
-                replaced = true;
-            }
+        void UICoreMessage(BasePlayer player, string message, float timeout = SimpleUI_HideTimer) {
+            float fadeIn = 0.1f;
 
             UIObject ui = new UIObject();
 
-            ui.AddText("DeathNotice_DropShadow", SimpleUI_Left + 0.001, SimpleUI_Top + 0.001, SimpleUI_MaxWidth, SimpleUI_MaxHeight, shadowColor, StripTags(message), SimpleUI_FontSize, "Hud", 3, fadeIn, 0.2f);
-            ui.AddText("DeathNotice", SimpleUI_Left, SimpleUI_Top, SimpleUI_MaxWidth, SimpleUI_MaxHeight, noticeColor, message, SimpleUI_FontSize, "Hud", 3, fadeIn, 0.2f);
+            ui.AddText("DeathNotice_DropShadow",
+                SimpleUI_Left + 0.001, SimpleUI_Top + 0.001,
+                SimpleUI_MaxWidth, SimpleUI_MaxHeight,
+                shadowColor,
+                StripTags(message),
+                SimpleUI_FontSize,
+                "Hud.Menu", 3, fadeIn, fadeIn);
 
-            ui.Destroy(player);
+            ui.AddText("DeathNotice", SimpleUI_Left, SimpleUI_Top, SimpleUI_MaxWidth, SimpleUI_MaxHeight, noticeColor, message, SimpleUI_FontSize, "Hud.Menu", 3, fadeIn, fadeIn);
 
-            if (replaced) {
-                timer.Once(0.1f, () => {
-                    ui.Draw(player);
-                    timers[player] = timer.Once(SimpleUI_HideTimer, () => ui.Destroy(player));
-                });
-            } else {
-                ui.Draw(player);
-                timers[player] = timer.Once(SimpleUI_HideTimer, () => ui.Destroy(player));
-            }
+            ui.Draw(player);
+            timer.Once(timeout, () => {
+                ui.Destroy(player);
+            });
         }
 
         Dictionary<string, int> countdowns = new Dictionary<string, int>();
@@ -564,11 +554,12 @@ namespace Oxide.Plugins {
             }
 
             if (end) {
-                UIMessage(player, $"<color=green>Starting</color>");
-                Effect.server.Run("assets/bundled/prefabs/fx/player/gutshot_scream.prefab", player.GetNetworkPosition());
+                UICoreMessage(player, $"<color=green>START</color>");
+                Effect.server.Run("assets/prefabs/locks/keypad/effects/lock.code.updated.prefab", player.GetNetworkPosition());
                 //timer.Once(1, () => CountDown(arena, player, end));
             } else {
-                UIMessage(player, $"<color=orange>Starting in {countdowns[key]--} seconds</color>");
+                UICoreMessage(player, $"<color=red>{countdowns[key]--}</color>");
+                Effect.server.Run("assets/prefabs/locks/keypad/effects/lock.code.lock.prefab", player.GetNetworkPosition());
                 timer.Once(1, () => CountDown(arena, player));
             }
         }
@@ -582,7 +573,8 @@ namespace Oxide.Plugins {
 
             return original;
         }
-        class UIColor {
+        class UIColor
+        {
             string color;
 
             public UIColor(double red, double green, double blue, double alpha) {
@@ -591,7 +583,8 @@ namespace Oxide.Plugins {
 
             public override string ToString() => color;
         }
-        class UIObject {
+        class UIObject
+        {
             List<object> ui = new List<object>();
             List<string> objectList = new List<string>();
 

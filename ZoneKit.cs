@@ -82,7 +82,7 @@ namespace Oxide.Plugins {
         void OnEnterZone(string ZoneID, BasePlayer player) {
             if (zoneKit.ContainsKey(ZoneID)) {
                 timer.Once(3f, () =>
-                Interface.CallHook("TryGiveKit", player, zoneKit[ZoneID]));
+                Interface.CallHook("GiveKit", player, zoneKit[ZoneID]));
             }
         }
         private void OnExitZone(string ZoneID, BasePlayer player) {

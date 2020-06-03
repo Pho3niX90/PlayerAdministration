@@ -2,7 +2,7 @@ using System;
 
 namespace Oxide.Plugins
 {
-    [Info("Stat Track", "Pho3niX90", "1.0.4")]
+    [Info("Stat Track", "Orange", "1.0.5")]
     [Description("Allows your players to get statstracking kills on items")]
     public class StatTrack : RustPlugin
     {
@@ -77,6 +77,8 @@ namespace Oxide.Plugins
 
         private int GetStatTrackKills(string name)
         {
+            //name = name.TrimEnd("kills</color>".ToCharArray());
+            //var killsS = name.Substring(name.LastIndexOf(">") + 1);
             name = name.TrimEnd("kills".ToCharArray());
             var killsS = name.Substring(name.LastIndexOf(", ") + 1);
             return Convert.ToInt32(killsS);

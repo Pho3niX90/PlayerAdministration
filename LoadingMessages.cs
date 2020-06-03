@@ -7,7 +7,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Loading Messages", "CosaNostra/VVoid", "1.0.5", ResourceId = 2763)]
+    [Info("Loading Messages", "CosaNostra/Def", "1.0.6", ResourceId = 2763)]
     [Description("Shows custom texts on loading screen")]
     public class LoadingMessages : RustPlugin
     {
@@ -142,7 +142,7 @@ namespace Oxide.Plugins
             if (_config?.Msgs == null || _config.Msgs.Count == 0)
             {
                 Unsubscribe(nameof(OnUserApprove));
-                Unsubscribe(nameof(OnPlayerInit));
+                Unsubscribe(nameof(OnPlayerConnected));
                 PrintWarning("No loading messages defined! Check your config.");
                 return;
             }
@@ -176,7 +176,7 @@ namespace Oxide.Plugins
             DisplayMessage(connection, GetCurrentMessage());
         }
 
-        private void OnPlayerInit(BasePlayer player)
+        private void OnPlayerConnected(BasePlayer player)
         {
             _clients.Remove(player.userID);
             DisplayMessage(player.Connection, GetLastMessage() ?? GetCurrentMessage());

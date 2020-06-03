@@ -9,14 +9,16 @@ using System.Text;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
-namespace Oxide.Plugins {
-    [Info("King Stash warning system", "Pho3niX90", "1.1.1")]
+namespace Oxide.Plugins
+{
+    [Info("King Stash warning system", "Pho3niX90", "1.1.3")]
     [Description("")]
 
-    class KingStashWarning : RustPlugin {
-
+    class KingStashWarning : RustPlugin
+    {
         #region Plugin References
-        [PluginReference] Plugin DiscordMessages;
+        [PluginReference] Plugin DiscordApi;
+        [PluginReference] Plugin Clans;
         #endregion
 
         #region Global Vars
@@ -51,6 +53,7 @@ namespace Oxide.Plugins {
 
         object CanSeeStash(BasePlayer player, StashContainer stash) {
             if (StashUsers.Contains(player.userID)) return "Dont show";
+            if (IsMemberOrAlly(stash.OwnerID.ToString(), player.UserIDString)) return null;
 
             IPlayer iplayer = covalence.Players.FindPlayerById(stash.OwnerID.ToString());
             Puts("Stash found " + stash.OwnerID);
@@ -108,8 +111,11 @@ namespace Oxide.Plugins {
             stash.OwnerID = KingSteamID;
             var contents = new StringBuilder();
 
-            for (var i = 0; i < Random.Range(1, 6); i++) {
-                var keyValuePair = cfg.FillerItems.ElementAt(Random.Range(0, cfg.FillerItems.Count - 1));
+            for (var i = 0; i < Random.Range(2, 6); i++) {
+                var maxVal = (cfg.FillerItems.Count - 1);
+                var itemindex = Random.Range(0, maxVal);
+                Puts($"{itemindex} between 0 and {maxVal}");
+                var keyValuePair = cfg.FillerItems.ElementAt(itemindex);
 
                 Item item = ItemManager.CreateByName(keyValuePair.Key);
                 int qty = Random.Range(1, Math.Min(Convert.ToInt32(keyValuePair.Value), item.MaxStackable()));
@@ -151,6 +157,12 @@ namespace Oxide.Plugins {
         #endregion
 
         #region Helpers
+        bool IsMemberOrAlly(string userid1, string userid2) {
+            if (userid1.Equals(userid2)) return true;
+            return Clans.Call<bool>("IsMemberOrAlly", userid1, userid2);
+            // bool IsMemberOrAlly(string playerId, string otherId) // Check if 2 players are clan mates or clan allies
+        }
+
         void DiscordSend(BasePlayer player, List<EmbedFieldList> content) {
             if (cfg.DiscordWebhookURL.Length == 0 || cfg.DiscordWebhookURL.Equals("")) return;
 
@@ -176,7 +188,7 @@ namespace Oxide.Plugins {
 
             var fieldsObject = fields.Cast<object>().ToArray();
             string json = JsonConvert.SerializeObject(fieldsObject);
-            DiscordMessages?.Call("API_SendFancyMessage", cfg.DiscordWebhookURL, cfg.DiscordWebhookTitle, cfg.DiscordWebhookColor, json);
+            DiscordApi?.Call("API_SendEmbeddedMessage", cfg.DiscordWebhookURL, cfg.DiscordWebhookTitle, cfg.DiscordWebhookColor, json);
         }
 
         bool HasPermission(BasePlayer player, string permissionName = PermissionStash) {
@@ -236,7 +248,8 @@ namespace Oxide.Plugins {
 
         #region Configuration
 
-        private class KingStashWarningConfig {
+        private class KingStashWarningConfig
+        {
             // Config default vars
             public bool Debug = false;
             public string DiscordWebhookURL = "";
@@ -320,7 +333,8 @@ namespace Oxide.Plugins {
 
         #region Classes
 
-        public class EmbedFieldList {
+        public class EmbedFieldList
+        {
             public string name { get; set; }
             public string value { get; set; }
             public bool inline { get; set; }

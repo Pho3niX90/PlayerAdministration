@@ -36,7 +36,7 @@ namespace Oxide.Plugins
             }
         }
 
-        private void UpdatePlayerLimit(int limit) => rust.RunServerCommand($"player.limit {limit}");
+        private void UpdatePlayerLimit(int limit) => rust.RunServerCommand($"server.maxplayers {limit}");
         #endregion
 
         #region Configuration

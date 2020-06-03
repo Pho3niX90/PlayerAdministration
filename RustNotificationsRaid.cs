@@ -60,8 +60,7 @@ namespace Oxide.Plugins
         void OnEntityDeath(BaseCombatEntity entity, HitInfo info)
         {
             // Ignore if the entity is destroyed by decaying or not in list.
-            if ((info?.damageTypes?.Has(DamageType.Decay) ?? true)
-                || !BuildingBlocks.ContainsKey(entity.ShortPrefabName))
+            if ((info?.damageTypes?.Has(DamageType.Decay) ?? true))
                 return; 
 
             if (entity is BuildingBlock)
@@ -75,13 +74,16 @@ namespace Oxide.Plugins
             // If there are no owners, ignore
             if (tc == null || tc.authorizedPlayers.Count == 0) return;
 
+            // ignore player models death 
+            if (entity.ShortPrefabName.Equals("player") || entity.ShortPrefabName.Equals("corpse")) return;
+
             // If the initiator has auth, ignore
             if (info?.InitiatorPlayer != null
                 && tc.authorizedPlayers.FirstOrDefault(
                     ap => ap.userid.ToString() == info.InitiatorPlayer.UserIDString) != null) return;
 
 
-            SendAlert(BuildingBlocks[entity.ShortPrefabName],
+            SendAlert(entity.ShortPrefabName,
                 tc.authorizedPlayers.Select(p => p.userid.ToString()).ToArray());
 
             tc.authorizedPlayers?.ForEach(player => Puts($"{player.username}({player.userid.ToString()})"));
