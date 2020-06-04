@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Scrim Deathmatch", "Pho3niX90", "1.3.0")]
+    [Info("Scrim Deathmatch", "Pho3niX90", "1.3.1")]
     [Description("")]
     public class KingGamesDeathmatch : RustPlugin
     {

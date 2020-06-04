@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Scrim Core", "Pho3niX90", "0.0.8")]
+    [Info("Scrim Core", "Pho3niX90", "0.0.9")]
     [Description("")]
     public class KingGamesCore : RustPlugin
     {
@@ -74,8 +74,8 @@ namespace Oxide.Plugins
             LeaveMiniGame(player);
         }
 
-        private void OnEntityTakeDamage(BasePlayer player, HitInfo info) {
-            CheckDamage(player, info);
+        object OnEntityTakeDamage(BasePlayer player, HitInfo info) {
+            return CheckDamage(player, info);
         }
 
         private void OnPlayerDeath(BasePlayer player, HitInfo info) {
@@ -144,11 +144,12 @@ namespace Oxide.Plugins
             }
         }
 
-        private static void CheckDamage(BasePlayer player, HitInfo info) {
+        private static object CheckDamage(BasePlayer player, HitInfo info) {
             var initiator = info?.InitiatorPlayer;
-            if (!API_CanGetDamageFrom(player, initiator, info)) {
-                info.damageTypes.ScaleAll(0f);
-            }
+            //if (!API_CanGetDamageFrom(player, initiator, info)) {
+            //    info.damageTypes.ScaleAll(0f);
+            //}
+            return API_CanGetDamageFrom(player, initiator, info);
         }
 
         private static void CleanContainer(ItemContainer container) {
@@ -411,7 +412,9 @@ namespace Oxide.Plugins
             return ((string)obj);
         }
 
-        private static bool API_CanGetDamageFrom(BasePlayer victim, BasePlayer initiator, HitInfo info) {
+        private static object API_CanGetDamageFrom(BasePlayer victim, BasePlayer initiator, HitInfo info) {
+            // null is true
+
 
             //Below must be handled by event to check if players are participating
             //if (initiator == null) {
@@ -426,15 +429,11 @@ namespace Oxide.Plugins
 
             if (victim == initiator) {
                 //plugin.Puts("[KGC] Can get damage because: victim == initiator");
-                return true;
+                return null;
             }
 
             var obj = Interface.CallHook(nameof(CanGetDamageFrom), victim, initiator, info);
-            if (obj != null) {
-                //plugin.Puts($"[KGC] Can't get damage because: {obj}");
-                return false;
-            }
-            return true;
+            return obj;
         }
 
         private static void API_JoinMiniGame(BasePlayer player, string name) {

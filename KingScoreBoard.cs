@@ -14,7 +14,7 @@ using WebSocketSharp;
 
 namespace Oxide.Plugins
 {
-    [Info("King Score Board", "Pho3niX90", "0.1.95")]
+    [Info("King Score Board", "Pho3niX90", "0.1.96")]
     [Description("Scoring System")]
     public class KingScoreBoard : RustPlugin
     {
@@ -253,6 +253,7 @@ namespace Oxide.Plugins
 
                 if (clan.Trim().IsNullOrEmpty()) {
                     permission.RevokeUserPermission(Player.UserIDString, "whitelist.allowed");
+                    permission.GrantUserPermission(Player.UserIDString, "whitelist.kicked", null);
                     Puts($"Should kick {Player.displayName}");
                     Player?.Kick("You have been eliminated!"); ;
                     return;
@@ -692,6 +693,7 @@ namespace Oxide.Plugins
                         if (player != null) {
                             if (player.IsConnected && !player.IsAdmin) {
                                 permission.RevokeUserPermission(userid, "whitelist.allowed");
+                                permission.GrantUserPermission(userid, "whitelist.kicked", null);
                                 Puts($"Should kick {player.displayName}");
                                 player?.Kick("You have been eliminated!"); ;
                                 PrintToChat($"Team {clan} has been eliminated!");
@@ -710,6 +712,7 @@ namespace Oxide.Plugins
             foreach (BasePlayer player in BasePlayer.activePlayerList) {
                 if (!player.IsAdmin && player.IsConnected) {
                     permission.RevokeUserPermission(player.UserIDString, "whitelist.allowed");
+                    permission.GrantUserPermission(player.UserIDString, "whitelist.kicked", null);
                     player.Kick("The tournament has ended, thanks for participating.");
                 }
             }

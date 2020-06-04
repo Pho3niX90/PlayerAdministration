@@ -1,3 +1,4 @@
+using Mono.Unix.Native;
 using Newtonsoft.Json;
 using Oxide.Core;
 using Oxide.Core.Plugins;
@@ -252,6 +253,7 @@ namespace Oxide.Plugins
 
             Interface.Call("OnBuildPhaseInitiated");
             foreach (BasePlayer player in BasePlayer.activePlayerList) SendReplyWithIcon(player, "Build phase has started, all PVP damage has been turned off.");
+    
             if (CFile.UiSettings.Enabled) {
                 InitializeUi();
                 UiTimer = timer.Every(1f, RefreshTimer);
@@ -318,6 +320,7 @@ namespace Oxide.Plugins
         }
 
         private void AddUi(BasePlayer player) {
+
             if (!UiPlayers.ContainsKey(player.userID))
                 UiPlayers.Add(player.userID, player);
             CuiHelper.DestroyUi(player, MainContainer);
