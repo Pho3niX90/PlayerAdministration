@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Scrim Deathmatch", "Pho3niX90", "1.3.1")]
+    [Info("Scrim Deathmatch", "Pho3niX90", "1.3.21")]
     [Description("")]
     public class KingGamesDeathmatch : RustPlugin
     {
@@ -56,7 +56,7 @@ namespace Oxide.Plugins
 
         void OnPlayerDeath(BasePlayer player, HitInfo info) {
             BasePlayer attacker = info?.InitiatorPlayer;
-            Puts($"Player {player.displayName} has died. Killed  by {attacker?.displayName} {attacker == null}");
+            Puts($"Player {player.displayName} has died. Killed by {attacker?.displayName} {attacker == null}");
             MarkDead(player);
         }
         #endregion
@@ -99,14 +99,14 @@ namespace Oxide.Plugins
         }
 
         private static void LeaveGame(BasePlayer player) {
-            var obj = player?.GetComponent<GamePlayer>();
+            var obj = plugin.GetPlayer(player);
             if (obj != null) {
                 UnityEngine.Object.DestroyImmediate(obj);
             }
         }
 
         private static void MarkReady(BasePlayer player, bool ar = false) {
-            var obj = player?.GetComponent<GamePlayer>();
+            var obj = plugin.GetPlayer(player);
             if (obj != null && !obj.isReady) {
                 obj.isReady = true;
                 plugin.SendAll(obj.team.controller, ar ? Message.BecameReadyAuto : Message.BecameReady, player.displayName);
@@ -114,7 +114,7 @@ namespace Oxide.Plugins
         }
 
         private static void MarkDead(BasePlayer player) {
-            var obj = player.GetComponent<GamePlayer>();
+            var obj = plugin.GetPlayer(player);
             if (obj != null)
                 obj.Died();
         }
@@ -148,11 +148,8 @@ namespace Oxide.Plugins
         #region Scores
         private void OnEntityTakeDamage(BasePlayer player, HitInfo info) {
             if (info == null || info.damageTypes.Total() < 1) return;
-
-            var initiator = info?.InitiatorPlayer?.GetComponent<GamePlayer>();
-            if (initiator != null) {
-                initiator.damage += Convert.ToInt32(info.damageTypes.Total());
-            }
+            var initiator = plugin.GetPlayer(info?.InitiatorPlayer);
+            if (initiator != null) initiator.damage += Convert.ToInt32(info.damageTypes.Total());
         }
 
         private void OnEntityDeath(BasePlayer player, HitInfo info) {
@@ -160,8 +157,8 @@ namespace Oxide.Plugins
                 return;
             }
 
-            var initiator = info?.InitiatorPlayer?.GetComponent<GamePlayer>();
-            var victim = player.GetComponent<GamePlayer>();
+            var initiator = plugin.GetPlayer(info?.InitiatorPlayer);
+            var victim = plugin.GetPlayer(player);
 
             if (initiator != null) {
                 initiator.kills++;
@@ -1123,7 +1120,7 @@ namespace Oxide.Plugins
         [ConsoleCommand("api.deathmatch")]
         private void cmdAPICommand(ConsoleSystem.Arg arg) {
             var bPlayer = arg.Player();
-            var player = bPlayer?.GetComponent<GamePlayer>();
+            var player = GetPlayer(bPlayer);
             if (player == null) {
                 return;
             }
@@ -1240,7 +1237,7 @@ namespace Oxide.Plugins
         [ConsoleCommand("deathmatch.changeteam")]
         private void cmdCommand(ConsoleSystem.Arg arg) {
             var bPlayer = arg.Player();
-            var player = bPlayer?.GetComponent<GamePlayer>();
+            var player = GetPlayer(bPlayer);
             if (player == null) {
                 return;
             }
@@ -1455,7 +1452,6 @@ namespace Oxide.Plugins
 
         #region Hook
         private void OnPlayerDisconnected(BasePlayer player, string reason) {
-            GamePlayer gp = player.GetComponent<GamePlayer>();
             Puts("Player disconnected");
             try {
                 LeaveGame(player);
@@ -1494,9 +1490,11 @@ namespace Oxide.Plugins
 
             public void Restart() {
                 gameInProgress = false;
+
+                CleanArena(definition.team1Spawn, definition.team2Spawn);
+
                 team1.ResetPlayers(true);
                 team2.ResetPlayers(true);
-                CleanArena(definition.team1Spawn, definition.team2Spawn);
 
                 foreach (GamePlayer pl in allPlayers) {
                     UIMsg(pl.original, pl.currentGame);
@@ -1543,7 +1541,7 @@ namespace Oxide.Plugins
                 }
 
                 var num = team1.countAlive > 0 ? 1 : 2;
-                plugin.timer.Once(0.6f, () => {
+                plugin.timer.Once(0.1f, () => {
                     SendAll(Message.TeamWon, num == 1 ? plugin.red : plugin.blue, num);
 
                     foreach (GamePlayer pl in allPlayers) {
@@ -1579,7 +1577,8 @@ namespace Oxide.Plugins
                     }
                 }
             }
-
+            
+            
             void UIMsg(BasePlayer player, string arena) {
                 Interface.CallHook("CountDown", arena, player);
             }
@@ -1621,7 +1620,7 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                var member = player.gameObject.GetComponent<GamePlayer>();
+                var member = plugin.GetPlayer(player);
                 if (member != null) {
                     plugin.SendMessage(player, Message.InOtherGame);
                     return;
@@ -1845,44 +1844,58 @@ namespace Oxide.Plugins
         #endregion
 
         #region Minigames API 1.0.0
-
+        GamePlayer GetPlayer(BasePlayer bPlayer) => bPlayer?.GetComponent<GamePlayer>();
         private object GetCustomSpawnPosition(BasePlayer player) // Return position if needed
         {
-            var obj = player?.GetComponent<GamePlayer>();
-            List<Vector3> spawns = LoadSpawnpoints(obj.GetRespawnInfo()?.spawnFile);
-            List<Vector3> spawns2 = LoadSpawnpoints("start_area");
+            var obj = GetPlayer(player);
+            string spawnFile = obj?.GetRespawnInfo()?.spawnFile;
+
+            List<Vector3> spawns;
+            if (spawnFile != null) {
+                spawns = LoadSpawnpoints(spawnFile);
+            } else {
+                spawns = LoadSpawnpoints("start_area");
+            }
             return GetRandomSpawnPoint(spawns);// obj != null && spawns != null ? GetRandomSpawnPoint(spawns) : GetRandomSpawnPoint(spawns2);
         }
 
         private string GetCustomKitName(BasePlayer player) // Return kit name if needed
         {
-            GamePlayer gp = player?.GetComponent<GamePlayer>();
+            GamePlayer gp = GetPlayer(player);
             return gp != null ? gp.GetRespawnInfo()?.kitName : "";
         }
 
         private string GetCustomKitNameClothing(BasePlayer player) // Return kit name if needed
         {
-            GamePlayer gp = player?.GetComponent<GamePlayer>();
+            GamePlayer gp = plugin.GetPlayer(player);
             return gp != null ? gp?.GetRespawnInfo()?.kitNameClothing : "";
         }
 
-        private object CanGetDamageFrom(BasePlayer victim, BasePlayer initiator, HitInfo info) // Return text why cant get damage
+        private object CanGetDamageFrom(BasePlayer victim, HitInfo info) // Return text why cant get damage
         {
-            var obj1 = victim?.GetComponent<GamePlayer>();
-            var obj2 = initiator?.GetComponent<GamePlayer>();
+
+            if (info == null || info.InitiatorPlayer == null) {
+                return "There is no attacker??";
+            }
+
+            BasePlayer initiator = info?.InitiatorPlayer;
+
+            if (victim == initiator) {
+                //plugin.Puts("[KGC] Can get damage because: victim == initiator");
+                return null;// "No Suicide";
+            }
+
+            var obj1 = GetPlayer(victim);
+            var obj2 = GetPlayer(initiator);
 
             if (obj1 == null && obj2 == null) {
                 return null;
             }
 
-            if (info == null) {
-                return "There is no attacker??";
-            }
-
             // TODO: Checks for controller??
 
             if (!obj1.isPlaying && !obj2.isPlaying) {
-                Puts("Non of the players are are playing scrim");
+                Puts("Non of the players are playing scrim");
                 return null;
             }
 
@@ -1903,7 +1916,7 @@ namespace Oxide.Plugins
 
         private object CanJoinMiniGame(BasePlayer player) // Return text with existing game name
         {
-            var obj = player?.GetComponent<GamePlayer>();
+            var obj = GetPlayer(player);
             return obj != null ? obj.currentGame : (object)null;
         }
 
@@ -1922,8 +1935,6 @@ namespace Oxide.Plugins
         }
 
         private string PlayersString(GamePlayer[] gplayers) {
-            string red = "#ff0000";
-            string blue = "#0000ff";
             StringBuilder builder = new StringBuilder();
 
             List<string> players = new List<string>();
@@ -1939,10 +1950,8 @@ namespace Oxide.Plugins
             return builder.ToString();
         }
 
-        private void ReadyToMiniGame(BasePlayer player, bool ar) // Mark ready to game if possible
-        {
-            MarkReady(player, ar);
-        }
+        private void ReadyToMiniGame(BasePlayer player, bool ar) => MarkReady(player, ar);
+        
         #endregion
 
         #region API

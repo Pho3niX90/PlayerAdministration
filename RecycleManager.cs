@@ -8,7 +8,7 @@ using Oxide.Core;
 
 namespace Oxide.Plugins
 {
-    [Info("RecycleManager", "Pho3niX90", "1.0.2")]
+    [Info("RecycleManager", "Pho3niX90", "1.0.16")]
     [Description("Easily change features about the recycler")]
 
     class RecycleManager : RustPlugin

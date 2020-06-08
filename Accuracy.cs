@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace Oxide.Plugins {
-    [Info("Accuracy", "Pho3niX90", "0.0.5")]
+    [Info("Accuracy", "Pho3niX90", "0.0.6")]
     [Description("Accuracy System")]
     public class Accuracy : RustPlugin {
         [PluginReference] Plugin ZoneManager;
@@ -15,8 +15,8 @@ namespace Oxide.Plugins {
         AccuracyData _globalData;
         new Dictionary<ulong, string> openPanels;
         Dictionary<string, int> lineNum;
-        #region Helpers
 
+        #region Helpers
         void Init() {
             if (!permission.PermissionExists(PERMISSION_NAME, this)) permission.RegisterPermission(PERMISSION_NAME, this);
         }
@@ -791,7 +791,6 @@ namespace Oxide.Plugins {
         #region Infinite Ammo
         private void OnWeaponFired(BaseProjectile projectile, BasePlayer player) {
             if (!permission.UserHasPermission(player.UserIDString, PERMISSION_NAME) || !InfiniteAmmo(player)) return;
-            projectile.GetItem().condition = projectile.GetItem().info.condition.max;
             if (projectile.primaryMagazine.contents > 0) return;
             projectile.primaryMagazine.contents = projectile.primaryMagazine.capacity;
             projectile.SendNetworkUpdateImmediate();

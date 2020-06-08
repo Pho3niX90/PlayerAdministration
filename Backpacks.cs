@@ -229,7 +229,7 @@ namespace Oxide.Plugins
         }
 
         BaseEntity FindBackpackWorld(BasePlayer player) {
-            BaseEntity sph = player.GetComponentInChildren<SphereEntity>();
+            BaseEntity sph = player.GetComponentInChildren<DroppedItemContainer>();
             return sph;
         }
 

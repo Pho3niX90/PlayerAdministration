@@ -10,34 +10,24 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Scrim Core", "Pho3niX90", "0.0.9")]
+    [Info("Games Core", "Pho3niX90", "0.1.0")]
     [Description("")]
     public class KingGamesCore : RustPlugin
     {
-        [PluginReference] Plugin Spawns;
         #region Vars
-
-        private static int getMask => LayerMask.GetMask("Construction", "Terrain");
+        [PluginReference] Plugin Spawns;
         private static KingGamesCore plugin;
-
         #endregion
 
         #region Oxide Hooks
-
         private void Init() {
             plugin = this;
-            cmd.AddChatCommand("lobby", this, nameof(cmdControlChat));
-            cmd.AddChatCommand("join", this, nameof(cmdControlChat));
-            cmd.AddChatCommand("leave", this, nameof(cmdControlChat));
-            cmd.AddChatCommand("r", this, nameof(cmdControlChat));
-            //cmd.AddChatCommand("ar", this, nameof(cmdControlChat));
-            cmd.AddChatCommand("ready", this, nameof(cmdControlChat));
             ConVar.Decay.tick = float.MaxValue;
         }
 
         private void OnServerInitialized() {
-            ModifyItems();
-            FreezeTime();
+            DisableItemCondition();
+            ConfigureServer();
 
             timer.Once(1f, () => {
                 MoveAllPlayers();
@@ -51,40 +41,29 @@ namespace Oxide.Plugins
             }
         }
 
-        private BasePlayer.SpawnPoint OnPlayerRespawn(BasePlayer player) {
-            return new BasePlayer.SpawnPoint {
-                pos = GetSpawnPosition(player)
-            };
-        }
-
         private void OnEntitySpawned(LootableCorpse corpse) {
             if (corpse == null || corpse.IsDestroyed) return;
             foreach (var container in corpse.containers) {
                 if (container == null) continue;
-                CleanContainer(container);
+                foreach (var item in container.itemList.ToArray()) {
+                    item.GetHeldEntity()?.Kill();
+                    item.DoRemove();
+                }
             }
             corpse.Kill();
         }
 
-        private void OnPlayerRespawned(BasePlayer player) {
-            RefreshPlayer(player);
-        }
+        private BasePlayer.SpawnPoint OnPlayerRespawn(BasePlayer player) => new BasePlayer.SpawnPoint { pos = GetSpawnPosition(player) };
 
-        private void OnPlayerDisconnected(BasePlayer player) {
-            LeaveMiniGame(player);
-        }
+        private void OnPlayerRespawned(BasePlayer player) => RefreshPlayer(player);
 
-        object OnEntityTakeDamage(BasePlayer player, HitInfo info) {
-            return CheckDamage(player, info);
-        }
+        private void OnPlayerDisconnected(BasePlayer player) => LeaveGame(player);
 
-        private void OnPlayerDeath(BasePlayer player, HitInfo info) {
-            AutoRespawn(player);
-        }
+        object OnEntityTakeDamage(BasePlayer player, HitInfo info) => API_CanGetDamageFrom(player, info);
 
-        private void OnPlayerSleep(BasePlayer player) {
-            AutoWakeup(player);
-        }
+        private void OnPlayerDeath(BasePlayer player, HitInfo info) => AutoRespawn(player);
+
+        private void OnPlayerSleep(BasePlayer player) => AutoWakeup(player);
 
         private object CanDropActiveItem(BasePlayer player) {
             return false;
@@ -98,73 +77,39 @@ namespace Oxide.Plugins
         private object OnServerMessage(string m, string n) {
             return m.Contains("gave") && n == "SERVER" ? (object)true : null;
         }
-
-        private void OnServerSave() {
-            Server.Command("writecfg");
-        }
-
         #endregion
 
         #region Commands
-
-        private void cmdControlChat(BasePlayer player, string command, string[] args) {
-            switch (command.ToLower()) {
-                case "join":
-                    var name = args?.Length > 0 ? args[0].ToLower() : "null";
-                    BasePlayer joiner = player;
-                    if (args?.Length == 2) {
-                        BasePlayer bot = BasePlayer.Find(args[1]);
-                        if (bot != null) {
-                            joiner = bot;
-                        }
-                    }
-                    API_JoinMiniGame(joiner, name);
-                    break;
-
-                case "lobby":
-                case "leave":
-                    API_LeaveMiniGame(player);
-                    break;
-
-
-                case "r":
-                case "ready":
-                    API_ReadyToMiniGame(player);
-                    break;
+        [Command("join")]
+        private void cmdJoin(BasePlayer player, string command, string[] args) {
+            var name = args?.Length > 0 ? args[0].ToLower() : "null";
+            BasePlayer joiner = player;
+            if (args?.Length == 2) {
+                BasePlayer bot = BasePlayer.Find(args[1]);
+                if (bot != null) {
+                    joiner = bot;
+                }
             }
+            API_JoinGame(joiner, name);
         }
 
+        [Command("leave", "lobby")]
+        private void cmdLeave(BasePlayer player, string command, string[] args) => API_LeaveGame(player);
+
+        [Command("ready", "r")]
+        private void cmdReady(BasePlayer player, string command, string[] args) => API_ReadyToGame(player);
         #endregion
 
-        #region Core
-
-        private void MoveAllPlayers() {
-            foreach (var player in BasePlayer.activePlayerList) {
-                RefreshPlayer(player);
-            }
+        #region Helper Methods
+        #region Player
+        private static Vector3 GetLobbyPosition() {
+            List<Vector3> spawnPoints = plugin.Spawns?.Call("LoadSpawnFile", "start_area") as List<Vector3>;
+            return spawnPoints.GetRandom();
         }
 
-        private static object CheckDamage(BasePlayer player, HitInfo info) {
-            var initiator = info?.InitiatorPlayer;
-            //if (!API_CanGetDamageFrom(player, initiator, info)) {
-            //    info.damageTypes.ScaleAll(0f);
-            //}
-            return API_CanGetDamageFrom(player, initiator, info);
-        }
-
-        private static void CleanContainer(ItemContainer container) {
-            foreach (var item in container.itemList.ToArray()) {
-                item.GetHeldEntity()?.Kill();
-                item.DoRemove();
-            }
-        }
-
-        private void AutoRespawn(BasePlayer player) {
-            timer.Once(0.2f, () => {
-                if (player.IsValid() && player.IsDead() && player.IsConnected) {
-                    player.Respawn();
-                }
-            });
+        private static Vector3 GetSpawnPosition(BasePlayer player) {
+            var position = API_GetCustomSpawnPosition(player);
+            return position == new Vector3() ? GetLobbyPosition() : position;
         }
 
         private void AutoWakeup(BasePlayer player) {
@@ -174,12 +119,66 @@ namespace Oxide.Plugins
                 }
 
                 if (player.IsReceivingSnapshot) {
-                    timer.Once(1f, () => AutoWakeup(player));
+                    timer.Once(0.5f, () => AutoWakeup(player));
                     return;
                 }
 
                 player.EndSleeping();
             });
+        }
+
+        private static void Teleport(BasePlayer player, Vector3 position) {
+            if (player.IsAlive()) {
+                player.ConsoleMessage($"Teleporting to {position}");
+                player.EnsureDismounted();
+                player.SetPlayerFlag(BasePlayer.PlayerFlags.ReceivingSnapshot, true);
+                player.Teleport(position);
+                player.UpdateNetworkGroup();
+                player.SendNetworkUpdateImmediate();
+                //player.ClientRPCPlayer(null, player, "StartLoading");
+                player.SendFullSnapshot();
+            } else {
+                player.RespawnAt(position, new Quaternion());
+            }
+        }
+
+        private void RefreshPlayer(BasePlayer player) {
+            if (!player.IsConnected || !player.IsAlive()) return;
+
+            player.inventory.Strip();
+
+            ResetPlayerStats(player);
+            Teleport(player, GetSpawnPosition(player));
+
+            // get kits
+            var kitName = API_GetKitName(player);
+            var kitNameClothing = API_GetKitClothing(player);
+            if (string.IsNullOrEmpty(kitName)) {
+                kitName = config.lobbyKit;
+            }
+
+            timer.Once(0.4f, () => {
+                player.ConsoleMessage($"Giving player kit '{kitName}'");
+                Interface.CallHook("GiveKit", player, kitName);
+                if (kitNameClothing != null) {
+                    Interface.CallHook("GiveKit", player, kitNameClothing);
+                    player.ConsoleMessage($"Giving player clothing kit '{kitNameClothing}'");
+                }
+                player.SendNetworkUpdateImmediate();
+            });
+        }
+
+        private void ResetPlayerStats(BasePlayer player) {
+            if (player.IsWounded()) player.StopWounded();
+            player.health = 100f;
+            player.metabolism.hydration.max = 500;
+            player.metabolism.hydration.value = 500;
+            player.metabolism.calories.max = 500;
+            player.metabolism.calories.value = 500;
+            player.metabolism.bleeding.max = 0;
+            player.metabolism.temperature.max = 30;
+            player.metabolism.temperature.min = 30;
+            player.metabolism.temperature.value = 30;
         }
 
         private static void TickRemoveSleepers() {
@@ -190,88 +189,27 @@ namespace Oxide.Plugins
             }
         }
 
-        private static void Teleport(BasePlayer player, Vector3 position) {
-            player.ConsoleMessage($"Teleporting to {position}");
-            player.EnsureDismounted();
-            player.SetPlayerFlag(BasePlayer.PlayerFlags.ReceivingSnapshot, true);
-            player.Teleport(position);
-            player.UpdateNetworkGroup();
-            player.SendNetworkUpdateImmediate();
-            //player.ClientRPCPlayer(null, player, "StartLoading");
-            player.SendFullSnapshot();
-        }
-
-        private static void ModifyItems() {
-            foreach (var item in ItemManager.itemList) {
-                item.condition.enabled = false;
-            }
-        }
-
-        private void RefreshPlayer(BasePlayer player) {
-            Puts($"Refreshing player {player.displayName}");
-            if (!player.IsConnected) {
-                Puts($"Player either not connected");
-                return;
-            }
-            if (!player.IsAlive()) {
-                Puts($"Player either not alive");
-                return;
-            }
-
-            if (player.IsWounded()) {
-                player.StopWounded();
-            }
-
-            // --- Params --- //
-            player.health = 100f;
-            player.metabolism.hydration.max = 5000;
-            player.metabolism.hydration.value = 5000;
-            player.metabolism.calories.max = 5000;
-            player.metabolism.calories.value = 5000;
-            player.metabolism.bleeding.max = 0;
-            player.metabolism.temperature.max = 30;
-            player.metabolism.temperature.min = 30;
-            player.metabolism.temperature.value = 30;
-
-            // --- Position --- //
-            var position = GetSpawnPosition(player);
-            if (player.IsAlive()) {
-                Puts($"Teleporting {player.displayName} to {position}");
-                Teleport(player, position);
-            } else {
-                Puts($"Respawning {player.displayName} at {position}");
-                player.RespawnAt(position, new Quaternion());
-            }
-
-            // --- Items --- //
-            var kitName = API_GetKitName(player);
-            var kitNameClothing = API_GetKitClothing(player);
-            if (string.IsNullOrEmpty(kitName)) {
-                kitName = config.lobbyKit;
-            }
-
-            player.inventory.Strip();
-            timer.Once(0.2f, () => {
-                player.ConsoleMessage($"Giving player kit '{kitName}'");
-                Interface.CallHook("GiveKit", player, kitName);
-                if (kitNameClothing != null) {
-                    Interface.CallHook("GiveKit", player, kitNameClothing);
-                    player.ConsoleMessage($"Giving player clothing kit '{kitNameClothing}'");
+        private void AutoRespawn(BasePlayer player) {
+            timer.Once(0.1f, () => {
+                if (player.IsValid() && player.IsDead() && player.IsConnected) {
+                    player.Respawn();
                 }
             });
-
-            player.SendNetworkUpdateImmediate();
         }
 
-        private static Vector3 GetSpawnPosition(BasePlayer player) {
-            var position = API_GetCustomSpawnPosition(player);
-            if (position == new Vector3()) {
-                position = GetLobbyPosition();
-            }
-            return position;
+        private void MoveAllPlayers() {
+            foreach (var player in BasePlayer.activePlayerList) RefreshPlayer(player);
         }
+        #endregion
 
-        private void FreezeTime() {
+        #region Items
+        private static void DisableItemCondition() {
+            foreach (var item in ItemManager.itemList) item.condition.enabled = false;
+        }
+        #endregion
+
+        #region Environment
+        private void ConfigureServer() {
             var time = UnityEngine.Object.FindObjectOfType<TOD_Time>();
             if (time != null) {
                 time.ProgressTime = false;
@@ -282,11 +220,7 @@ namespace Oxide.Plugins
             Server.Command("weather.rain 0");
             Server.Command("antihack.terrain_protection 0");
             Server.Command("antihack.terrain_kill false");
-        }
-
-        private static Vector3 GetLobbyPosition() {
-            List<Vector3> spawnPoints = plugin.Spawns?.Call("LoadSpawnFile", "start_area") as List<Vector3>;
-            return spawnPoints.GetRandom();
+            Server.Command("writecfg");
         }
 
         private static void RefreshFloatingTexts() {
@@ -326,10 +260,11 @@ namespace Oxide.Plugins
                 }
             }
         }
+        #endregion
 
         #endregion
 
-        #region Configuration | 2.0.0
+        #region Configuration
 
         private static ConfigData config = new ConfigData();
         private class RespawnInfo
@@ -395,8 +330,7 @@ namespace Oxide.Plugins
 
         #endregion
 
-        #region Minigames API 1.0.0
-
+        #region API
         private static Vector3 API_GetCustomSpawnPosition(BasePlayer player) {
             var obj = Interface.CallHook(nameof(GetCustomSpawnPosition), player);
             return (Vector3?)obj ?? new Vector3();
@@ -412,88 +346,54 @@ namespace Oxide.Plugins
             return ((string)obj);
         }
 
-        private static object API_CanGetDamageFrom(BasePlayer victim, BasePlayer initiator, HitInfo info) {
+        private static object API_CanGetDamageFrom(BasePlayer victim, HitInfo info) {
             // null is true
 
-
             //Below must be handled by event to check if players are participating
-            //if (initiator == null) {
-            //    plugin.Puts("[KGC] Can't get damage because: initiator == null");
-            //    return false;
-            //}
+            if (info == null || info.InitiatorPlayer == null) {
+                plugin.Puts("[KGC] Can't get damage because: initiator == null");
+                return false;
+            }
             //
             //if (info == null) {
             //    plugin.Puts("[KGC] Can't get damage because: info == null");
             //    return false;
             //}
 
-            if (victim == initiator) {
-                //plugin.Puts("[KGC] Can get damage because: victim == initiator");
-                return null;
-            }
-
-            var obj = Interface.CallHook(nameof(CanGetDamageFrom), victim, initiator, info);
+            var obj = Interface.CallHook(nameof(CanGetDamageFrom), victim, info);
+            if (obj != null) plugin.Puts(obj.ToString());
             return obj;
         }
 
-        private static void API_JoinMiniGame(BasePlayer player, string name) {
-            Interface.CallHook(nameof(JoinMiniGame), player, name);
+        private static void API_JoinGame(BasePlayer player, string name) {
+            Interface.CallHook(nameof(JoinGame), player, name);
         }
 
-        private static void API_LeaveMiniGame(BasePlayer player) {
-            Interface.CallHook(nameof(LeaveMiniGame), player);
-            plugin.NextTick(() => {
-                Interface.CallHook("RefreshPlayer", player);
-            });
+        private static void API_LeaveGame(BasePlayer player) {
+            Interface.CallHook(nameof(LeaveGame), player);
+            plugin.NextTick(() => Interface.CallHook("RefreshPlayer", player));
         }
 
-        private static void API_ReadyToMiniGame(BasePlayer player) {
-            Interface.CallHook(nameof(ReadyToMiniGame), player);
+        private static void API_ReadyToGame(BasePlayer player) {
+            Interface.CallHook(nameof(ReadyToGame), player);
         }
 
-        private object GetCustomSpawnPosition(BasePlayer player) // Return position if needed
+        private object GetCustomSpawnPosition(BasePlayer player) { return null; }
+        private string GetCustomKitName(BasePlayer player) { return null; }
+        private string GetCustomKitNameClothing(BasePlayer player) { return null; }
+        private object CanGetDamageFrom(BasePlayer victim, BasePlayer initiator) { return null; }
+        private object CanJoinGame(BasePlayer player) { return null; }
+        private void JoinGame(BasePlayer player, string name) // Join game with name
         {
-            return null;
-        }
-
-        private string GetCustomKitName(BasePlayer player) // Return kit name if needed
-        {
-            return null;
-        }
-
-        private string GetCustomKitNameClothing(BasePlayer player) // Return kit name if needed
-        {
-            return null;
-        }
-
-        private object CanGetDamageFrom(BasePlayer victim, BasePlayer initiator) // Return text why can get damage
-        {
-            return null;
-        }
-
-        private object CanJoinMiniGame(BasePlayer player) // Return text with existing game name
-        {
-            return null;
-        }
-
-        private void JoinMiniGame(BasePlayer player, string name) // Join game with name
-        {
-            var obj = Interface.CallHook(nameof(CanJoinMiniGame), player);
+            var obj = Interface.CallHook(nameof(CanJoinGame), player);
             //player.ConsoleMessage($"[Minigames] Can join game '{name}' : {obj == null} (Current game: {obj})");
             if (obj == null) {
                 // Join game here exactly
             }
         }
 
-        private void LeaveMiniGame(BasePlayer player) // Leave game if possible
-        {
-
-        }
-
-        private void ReadyToMiniGame(BasePlayer player) // Mark ready to game if possible
-        {
-
-        }
+        private void LeaveGame(BasePlayer player) { }
+        private void ReadyToGame(BasePlayer player) { }
 
         #endregion
 

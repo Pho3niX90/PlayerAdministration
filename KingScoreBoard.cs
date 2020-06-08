@@ -84,14 +84,11 @@ namespace Oxide.Plugins
         }
 
         #region Hooks
-        //private void FindCrates(Vector3 pos) {
-        //    List<LockedByEntCrate> crates = new List<LockedByEntCrate>();
-        //    Vis.Entities(pos, 20f, crates);
-        //
-        //    foreach (var crate in crates) {
-        //        cratesFound.TryAdd(crate.net.ID);
-        //    }
-        //}
+        private List<LootableCorpse> FindCorpses(Vector3 pos) {
+            List<LootableCorpse> corpses = new List<LootableCorpse>();
+            Vis.Entities(pos, 10f, corpses);
+            return corpses;
+        }
 
         void OnLootEntity(BasePlayer player, BaseEntity entity) {
             ulong playerId = player.userID;

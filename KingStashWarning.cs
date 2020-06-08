@@ -253,7 +253,7 @@ namespace Oxide.Plugins
             // Config default vars
             public bool Debug = false;
             public string DiscordWebhookURL = "";
-            public string DiscordWebhookTitle = "Icefuse: Stash Warning!";
+            public string DiscordWebhookTitle = "Kingdom: Stash Warning!";
             public string DiscordWebhookServer = "";
             public int DiscordWebhookColor = 13459797;
             public bool DiscordSendStashGive = true;

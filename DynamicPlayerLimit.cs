@@ -10,7 +10,7 @@ namespace Oxide.Plugins
     class DynamicPlayerLimit : RustPlugin
     {
         int _originalLimit = 0;
-        void Loaded() {
+        void OnServerInitialized() {
             _originalLimit = Admin.ServerInfo().MaxPlayers;
 
             int startPlayerLimit = Math.Max(Admin.ServerInfo().Players, config.startPlayerSlots);

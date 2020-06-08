@@ -13,11 +13,15 @@ using Network;
 using ConVar;
 using Facepunch;
 using Facepunch.Math;
+using CompanionServer;
 #endif
+
+// TODO: Improve string usage by using stringbuilders
+// TODO: Add "name" or "identifier" format for third-party plugins to obtain a formatted identifier
 
 namespace Oxide.Plugins
 {
-    [Info("Better Chat", "LaserHydra", "5.2.1")]
+    [Info("Better Chat", "LaserHydra", "5.2.4")]
     [Description("Allows to manage chat groups, customize colors and add titles.")]
     internal class BetterChat : CovalencePlugin
     {
@@ -136,7 +140,7 @@ namespace Oxide.Plugins
             var output = chatMessage.GetOutput();
 
 #if RUST
-            switch ((Chat.ChatChannel)chatchannel)
+            switch (chatchannel)
             {
                 case Chat.ChatChannel.Team:
                     RelationshipManager.PlayerTeam team = BasePlayer.Find(player.Id).Team;
@@ -145,17 +149,13 @@ namespace Oxide.Plugins
                         return true;
                     }
 
-                    List<Connection> onlineMemberConnections = new List<Connection>();
-                    foreach (ulong userID in team.members)
-                    {
-                        BasePlayer basePlayer = RelationshipManager.FindByID(userID);
-                        if (!(basePlayer == null) && basePlayer.Connection != null && !chatMessage.BlockedReceivers.Contains(basePlayer.UserIDString))
-                        {
-                            onlineMemberConnections.Add(basePlayer.Connection);
-                        }
-                    }
+                    team.BroadcastTeamChat(Convert.ToUInt64(player.Id), player.Name, chatMessage.Message, chatMessage.UsernameSettings.Color);
 
-                    ConsoleNetwork.SendClientCommand(onlineMemberConnections, "chat.add", new object[] { (int) chatchannel, player.Id, output.Chat });
+                    List<Network.Connection> onlineMemberConnections = team.GetOnlineMemberConnections();
+                    if (onlineMemberConnections != null)
+                    {
+                        ConsoleNetwork.SendClientCommand(onlineMemberConnections, "chat.add", new object[] { (int) chatchannel, player.Id, output.Chat });
+                    }
                     break;
 
                 default:
@@ -168,18 +168,22 @@ namespace Oxide.Plugins
                 p.Message(output.Chat);
 #endif
 
-            Puts(output.Console);
+
 
 #if RUST
+            Puts($"[{chatchannel}] {output.Console}");
+
             RCon.Broadcast(RCon.LogType.Chat, new Chat.ChatEntry
             {
-                Channel = (Chat.ChatChannel)chatchannel,
+                Channel = chatchannel,
                 Message = output.Console,
                 UserId = player.Id,
                 Username = player.Name,
                 Color = chatMessage.UsernameSettings.Color,
                 Time = Epoch.Current
             });
+#else
+            Puts(output.Console);
 #endif
 
             return true;
@@ -238,7 +242,8 @@ namespace Oxide.Plugins
 
             if (args.Length == 0)
             {
-                player.Reply($"{cmd} <group|user>");
+                player.Reply($"{cmd} group <add|remove|set|list>");
+                player.Reply($"{cmd} user <add|remove>");
                 return;
             }
 
@@ -402,10 +407,16 @@ namespace Oxide.Plugins
                     group.RemoveUser(targetPlayer);
                     player.ReplyLang("Removed From Group", new Dictionary<string, string> { ["player"] = targetPlayer.Name, ["group"] = groupName });
                 },
-                ["user"] = a => player.Reply($"Syntax: {cmd} user <add|remove>")
+                ["user"] = a => player.Reply($"Syntax: {cmd} user <add|remove>"),
+                [string.Empty] = a =>
+                {
+                    player.Reply($"{cmd} group <add|remove|set|list>");
+                    player.Reply($"{cmd} user <add|remove>");
+                }
             };
 
             var command = commands.First(c => argsStr.ToLower().StartsWith(c.Key));
+
             string remainingArgs = argsStr.Remove(0, command.Key.Length);
 
             command.Value(remainingArgs.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).ToArray());
@@ -561,6 +572,9 @@ namespace Oxide.Plugins
 
             [JsonProperty("Maximal Characters Per Message")]
             public int MaxMessageLength { get; set; } = 128;
+
+            [JsonProperty("Reverse Title Order")]
+            public bool ReverseTitleOrder { get; set; } = false;
         }
 
         #endregion
@@ -779,6 +793,11 @@ namespace Oxide.Plugins
                               .ToList();
 
                 titles = titles.GetRange(0, Math.Min(_instance._config.MaxTitles, titles.Count));
+
+                if (_instance._config.ReverseTitleOrder)
+                {
+                    titles.Reverse();
+                }   
 
                 foreach (var thirdPartyTitle in _instance._thirdPartyTitles)
                 {

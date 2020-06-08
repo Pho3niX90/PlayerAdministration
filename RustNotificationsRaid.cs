@@ -41,7 +41,7 @@ namespace Oxide.Plugins
             {"door.double.hinged.toptier", "Door"},
             {"door.double.hinged.wood", "Door"},
             {"door.double.hinged.metal", "Door"},
-            {"wall.frame.garagedoor", "Door"},
+            {"wall.frame.garagedoor", "Garage Door"},
             {"wall.frame.shopfront.metal", "Shop Front"},
             {"wall.frame.shopfront.wood", "Shop Front"},
             {"wall.windows.bars.wood", "Window Bars"},
@@ -50,6 +50,11 @@ namespace Oxide.Plugins
             {"wall.window.glass.reinforced", "Window"},
             {"shutter.metal.embrasure.a", "Window Shutters"},
             {"shutter.metal.embrasure.b", "Window Shutters"},
+            {"autoturret", "Auto Turret"},
+            {"gates.external.high.stone", "High External Stone Gate" },
+            {"wall.external.high.stone", "High External Stone Wall" },
+            {"gates.external.high.wood", "High External Wooden Gate" },
+            {"wall.external.high", "High External Wooden Wall" }
         };
 
         private void Init()
@@ -60,7 +65,8 @@ namespace Oxide.Plugins
         void OnEntityDeath(BaseCombatEntity entity, HitInfo info)
         {
             // Ignore if the entity is destroyed by decaying or not in list.
-            if ((info?.damageTypes?.Has(DamageType.Decay) ?? true))
+            if ((info?.damageTypes?.Has(DamageType.Decay) ?? true)
+                || !BuildingBlocks.ContainsKey(entity.ShortPrefabName))
                 return; 
 
             if (entity is BuildingBlock)
@@ -74,16 +80,13 @@ namespace Oxide.Plugins
             // If there are no owners, ignore
             if (tc == null || tc.authorizedPlayers.Count == 0) return;
 
-            // ignore player models death 
-            if (entity.ShortPrefabName.Equals("player") || entity.ShortPrefabName.Equals("corpse")) return;
-
             // If the initiator has auth, ignore
             if (info?.InitiatorPlayer != null
                 && tc.authorizedPlayers.FirstOrDefault(
                     ap => ap.userid.ToString() == info.InitiatorPlayer.UserIDString) != null) return;
 
 
-            SendAlert(entity.ShortPrefabName,
+            SendAlert(BuildingBlocks[entity.ShortPrefabName],
                 tc.authorizedPlayers.Select(p => p.userid.ToString()).ToArray());
 
             tc.authorizedPlayers?.ForEach(player => Puts($"{player.username}({player.userid.ToString()})"));

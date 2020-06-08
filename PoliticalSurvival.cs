@@ -7,10 +7,12 @@ using System.Linq;
 using System.Text;
 using UnityEngine;
 
-namespace Oxide.Plugins {
-    [Info("PoliticalSurvival", "Pho3niX90", "0.8.1")]
+namespace Oxide.Plugins
+{
+    [Info("PoliticalSurvival", "Pho3niX90", "0.9.0")]
     [Description("Political Survival - Become the ruler, tax your subjects and keep them in line!")]
-    class PoliticalSurvival : RustPlugin {
+    class PoliticalSurvival : RustPlugin
+    {
         bool firstRun = false;
         public bool DebugMode = false;
         Ruler ruler;
@@ -21,11 +23,11 @@ namespace Oxide.Plugins {
         private Dictionary<ulong, MapMarkerGenericRadius> _mapMarker;
         private VendingMachineMapMarker _mapMarkerVending;
 
-        [PluginReference] Plugin RecycleManager;
         [PluginReference] Plugin AFKAPI;
 
         #region Settings Class
-        public class TaxSource {
+        public class TaxSource
+        {
             public bool DispenserGather;
             public bool CropGather;
             public bool DispenserBonus;
@@ -48,7 +50,8 @@ namespace Oxide.Plugins {
             }
         }
 
-        public class Ruler {
+        public class Ruler
+        {
             public Vector3 taxContainerVector3;
             public uint taxContainerID;
             public double tax;
@@ -170,7 +173,8 @@ namespace Oxide.Plugins {
         public BasePlayer target;
         #endregion
 
-        class HeliComponent : FacepunchBehaviour {
+        class HeliComponent : FacepunchBehaviour
+        {
             private BaseHelicopter heli;
             private PatrolHelicopterAI AI;
             private bool isFlying = true;
@@ -345,8 +349,10 @@ namespace Oxide.Plugins {
             //if (!config.taxSource.DispenserGather || dispenser == null || entity == null || Item == null || ruler.GetTaxContainerID() == 0) return;
 
             BasePlayer player = entity as BasePlayer;
-            DebugLog("OnDispenserGather stage 2 " + item.flags.ToString() + " " + item.amount + " " + player.displayName);
-            AddToTaxContainer(item, player.displayName, out item.amount);
+            if (player != null) {
+                DebugLog("OnDispenserGather stage 2 " + item.flags.ToString() + " " + item.amount + " " + player.displayName);
+                AddToTaxContainer(item, player.displayName, out item.amount);
+            }
         }
 
         private void OnDispenserBonus(ResourceDispenser dispenser, BaseEntity entity, Item item) {
@@ -397,36 +403,37 @@ namespace Oxide.Plugins {
             if (itemAmount <= 1 || !IsChestSet()) return itemAmount;
             Item item = ItemManager.CreateByName(itemName, itemAmount);
             DebugLog("OnRecycleItemOutput start");
-            if (itemName == "scrap") {
-                Puts($"{itemName} before tax {item.amount}");
-                AddToTaxContainer(item, null, out item.amount);
-                Puts($"{itemName} after tax {item.amount}");
-            }
+
+            AddToTaxContainer(item, null, out item.amount);
             return item.amount;
         }
 
         #endregion
 
         void AddToTaxContainer(Item item, string displayName, out int netAmount) {
-            if (!IsChestSet() || item == null || ruler.GetTaxContainerID() == 0 || ruler.GetRuler() == 0 || ruler.GetTaxLevel() == 0 || ruler.GetTaxContainerVector3() == Vector3.negativeInfinity) {
-                netAmount = item.amount;
-                return;
-            }
-
-            ItemDefinition ToAdd = ItemManager.FindItemDefinition(item.info.itemid);
-            int Tax = Convert.ToInt32(Math.Ceiling((item.amount * ruler.GetTaxLevel()) / 100));
-
-            ItemContainer container = FindStorageContainer(ruler.GetTaxContainerID()).inventory;
-            if (ToAdd != null && container != null) {
-                if (item.CanMoveTo(container)) {
-                    container.AddItem(ToAdd, Tax);
-                    ruler.resourcesGot += Tax;
+            try {
+                if (!IsChestSet() || item == null || ruler.GetTaxContainerID() == 0 || ruler.GetRuler() == 0 || ruler.GetTaxLevel() == 0 || ruler.GetTaxContainerVector3() == Vector3.negativeInfinity) {
+                    netAmount = item.amount;
+                    return;
                 }
-            }
 
-            DebugLog("User " + displayName + " gathered " + item.amount + " x " + item.info.shortname + ", and " + Tax + " was taxed");
-            DebugLog("items added to tax container");
-            netAmount = item.amount - Tax;
+                ItemDefinition ToAdd = ItemManager.FindItemDefinition(item.info.itemid);
+                int Tax = Convert.ToInt32(Math.Ceiling((item.amount * ruler.GetTaxLevel()) / 100));
+
+                ItemContainer container = FindStorageContainer(ruler.GetTaxContainerID()).inventory;
+                if (ToAdd != null && container != null) {
+                    if (item.CanMoveTo(container)) {
+                        container.AddItem(ToAdd, Tax);
+                        ruler.resourcesGot += Tax;
+                    }
+                }
+
+                DebugLog("User " + displayName + " gathered " + item.amount + " x " + item.info.shortname + ", and " + Tax + " was taxed");
+                DebugLog("items added to tax container");
+                netAmount = item.amount - Tax;
+            } catch (Exception e) {
+                netAmount = item.amount;
+            }
         }
 
         void OnEntityDeath(BaseCombatEntity entity, HitInfo info) {
@@ -488,6 +495,11 @@ namespace Oxide.Plugins {
                 SetRuler(ruler);
                 PrintToChat(GetMsg("NewRuler"), currentRuler.displayName);
             }
+        }
+
+        [ConsoleCommand("forcenewruler")]
+        void TryForceNewRulerConsoleCommand(BasePlayer player, string command, string[] args) {
+            TryForceRulerCmd(player, command, args);
         }
 
         [ChatCommand("heli")]
@@ -761,11 +773,13 @@ namespace Oxide.Plugins {
         }
 
         #region Player Grid Coordinates and Locators
-        public interface ILocator {
+        public interface ILocator
+        {
             string GridReference(Vector3 component, out bool moved);
         }
 
-        public class RustIOLocator : ILocator {
+        public class RustIOLocator : ILocator
+        {
             public RustIOLocator(int worldSize) {
                 worldSize = (worldSize != 0) ? worldSize : (ConVar.Server.worldsize > 0) ? ConVar.Server.worldsize : _instance.config.worldSize;
                 translate = worldSize / 2f; //offset
@@ -789,7 +803,8 @@ namespace Oxide.Plugins {
             }
         }
 
-        public class LocatorWithDelay : ILocator {
+        public class LocatorWithDelay : ILocator
+        {
             public LocatorWithDelay(ILocator liveLocator, int updateInterval) {
                 this.liveLocator = liveLocator;
                 this.updateInterval = updateInterval;
@@ -823,7 +838,8 @@ namespace Oxide.Plugins {
                 return item.Location;
             }
 
-            class ExpiringCoordinates {
+            class ExpiringCoordinates
+            {
                 public string Location { get; set; }
                 public bool GridChanged { get; set; }
                 public DateTime Expires { get; set; }
@@ -906,15 +922,16 @@ namespace Oxide.Plugins {
         void AdviseRulerPosition() {
             try {
                 if (currentRuler != null) {
-                    if (AFKAPI != null) {
+                    if (AFKAPI != null && config.reasignOnAfk) {
                         long afkSeconds = AFKAPI.Call<long>("GetPlayerAFKTime", currentRuler.userID);
                         double afkMinutes = afkSeconds / 60d;
-                        if (afkMinutes >= 3 && afkMinutes < 5) {
+                        if (afkMinutes >= (config.reasignAfterMinutes-2) && afkMinutes < config.reasignAfterMinutes) {
                             SendReply(currentRuler, $"You have been afk for {afkMinutes} minutes, new ruler will be chosen in a minute if you do not move");
                         }
                         if (afkMinutes >= 5) {
                             PrintToChat("A new ruler was chosen, as the previous ruler was AFK for 5mins");
                             TryForceNewRuler(true);
+                            afkSeconds = 0;
                         }
                     }
 
@@ -1039,7 +1056,8 @@ namespace Oxide.Plugins {
         }
 
         #region Config
-        private class PSConfig {
+        private class PSConfig
+        {
             // Config default vars
             public bool Debug = false;
             public bool showWelcomeMsg = false;
@@ -1056,8 +1074,10 @@ namespace Oxide.Plugins {
 
             public int taxMin = 0;
             public int taxMax = 15;
+            public int reasignAfterMinutes = 5;
             //public TaxSource taxSource = new TaxSource().createDefault();
             public ulong taxBoxSkinId = 1482844040;
+            public bool reasignOnAfk = true;
 
             public int worldSize = ConVar.Server.worldsize;
 
@@ -1085,6 +1105,8 @@ namespace Oxide.Plugins {
                 GetConfig(ref taxMax, "TAX: Maximum");
                 //GetConfig(ref taxSource, "TAX: Source");
                 GetConfig(ref taxBoxSkinId, "TAX: Taxbox skin id");
+                GetConfig(ref reasignOnAfk, "AFK: Reasign Ruler When Player");
+                GetConfig(ref reasignAfterMinutes, "AFK: Reasign After Minutes");
 
                 GetConfig(ref worldSize, "MAP: World size");
 
