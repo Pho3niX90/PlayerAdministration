@@ -6,23 +6,24 @@ using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 
-namespace Oxide.Plugins {
-    [Info("Zone TP to Spawn", "Pho3niX90", "0.0.2")]
+namespace Oxide.Plugins
+{
+    [Info("Zone TP to Spawn", "Pho3niX90", "0.0.3")]
     [Description("Teleports players to a spawnfile when entering a zone.")]
-    public class ZoneTeleport : RustPlugin {
+    public class ZoneTeleport : RustPlugin
+    {
         [PluginReference] Plugin Spawns;
         [PluginReference] Plugin ZoneManager;
 
         List<ZSpawn> zoneToSpawn;
 
-        public class ZSpawn {
+        public class ZSpawn
+        {
             public bool isArena;
             public string zoneID;
             public string spawnName;
             public string arenaName;
-            public ZSpawn() {
 
-            }
             public ZSpawn(string zID, string name) {
                 zoneID = zID;
                 isArena = name.StartsWith("A:");
@@ -36,6 +37,7 @@ namespace Oxide.Plugins {
             zoneToSpawn = new List<ZSpawn>();
             LoadSpawnData();
         }
+
         void Unloaded() {
             SaveSpawnData();
         }
@@ -83,6 +85,7 @@ namespace Oxide.Plugins {
                 }
             }
         }
+
         [ChatCommand("zonetospawn_list")]
         void cmdSpawns3(BasePlayer player, string command, string[] args) {
             if (!player.IsAdmin) return;
@@ -91,7 +94,6 @@ namespace Oxide.Plugins {
                 SendReply(player, "There are no links");
             } else {
                 foreach (ZSpawn item in zoneToSpawn) {
-
                     if (item.isArena) str.Append($"{item.zoneID} links to {item.spawnName}, and is an arena\n");
                     else str.Append($"{item.zoneID} links to {item.spawnName}\n");
                 }
@@ -110,8 +112,6 @@ namespace Oxide.Plugins {
                     List<Vector3> spawns = LoadSpawnpoints(spawnFile.spawnName);
 
                     if (spawns != null) {
-                        // player.MovePosition(GetSpawnPoint(spawns));
-                        // player.SendNetworkUpdateImmediate();
                         MoveToSpawn(player, spawns);
                     }
                 }
@@ -124,7 +124,7 @@ namespace Oxide.Plugins {
             Vector3 position = GetSpawnPoint(spawns);
             if (position != null) {
                 if (!BasePlayer.sleepingPlayerList.Contains(player)) BasePlayer.sleepingPlayerList.Add(player);
-                
+
                 Vector3 spawn = GetSpawnPoint(spawns);
                 player.MovePosition(spawn);
                 player.ClientRPCPlayer(null, player, "ForcePositionTo", spawn);
@@ -172,19 +172,11 @@ namespace Oxide.Plugins {
 
         #region Data
         void SaveSpawnData() {
-            try {
-                Interface.Oxide.DataFileSystem.WriteObject($"ZoneTeleport", zoneToSpawn, true);
-            } catch (Exception e) {
-
-            }
+            Interface.Oxide.DataFileSystem.WriteObject($"ZoneTeleport", zoneToSpawn, true);
         }
 
         void LoadSpawnData() {
-            try {
-                zoneToSpawn = Interface.Oxide.DataFileSystem.ReadObject<List<ZSpawn>>($"ZoneTeleport");
-            } catch (Exception e) {
-                Puts(e.ToString());
-            }
+            zoneToSpawn = Interface.Oxide.DataFileSystem.ReadObject<List<ZSpawn>>($"ZoneTeleport");
         }
         #endregion
     }
