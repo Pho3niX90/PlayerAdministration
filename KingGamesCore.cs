@@ -1,6 +1,7 @@
 using Newtonsoft.Json;
 using Oxide.Core;
 using Oxide.Core.Plugins;
+using Oxide.Game.Rust.Cui;
 using Rust;
 using System;
 using System.Collections.Generic;
@@ -17,12 +18,29 @@ namespace Oxide.Plugins
         #region Vars
         [PluginReference] Plugin Spawns;
         private static KingGamesCore plugin;
+        private static List<string> teamColors = new List<string>();
+        private Dictionary<string, string> games;
+        private Dictionary<string, string> teams;
         #endregion
 
         #region Oxide Hooks
         private void Init() {
             plugin = this;
             ConVar.Decay.tick = float.MaxValue;
+
+            cmd.AddChatCommand("join", this, cmdJoin);
+            cmd.AddChatCommand("joingui", this, cmdJoinGUI);
+            cmd.AddChatCommand("leave", this, cmdLeave);
+            cmd.AddChatCommand("lobby", this, cmdLeave);
+            cmd.AddChatCommand("ready", this, cmdReady);
+            cmd.AddChatCommand("r", this, cmdReady);
+
+            //colors must be rgba, float
+            teamColors.Add("1 0 0 1");
+            teamColors.Add("0 0 1 1");
+            teamColors.Add("0 1 0 1");
+            teamColors.Add("1 0 1 1");
+            teamColors.Add("0 1 1 1");
         }
 
         private void OnServerInitialized() {
@@ -80,23 +98,44 @@ namespace Oxide.Plugins
         #endregion
 
         #region Commands
-        [Command("join")]
+        [ConsoleCommand("join")]
+        private void cmdConsoleJoin(ConsoleSystem.Arg arg) {
+            BasePlayer player = arg.Player();
+            Puts("throwing command");
+            if (player == null) return;
+            Puts("throwing command2");
+            cmdJoin(player, "join", arg.Args);
+        }
         private void cmdJoin(BasePlayer player, string command, string[] args) {
+            plugin.Puts("Joining");
             var name = args?.Length > 0 ? args[0].ToLower() : "null";
+            foreach (var x in args) {
+                plugin.Puts(x.ToString());
+            }
             BasePlayer joiner = player;
-            if (args?.Length == 2) {
-                BasePlayer bot = BasePlayer.Find(args[1]);
+            int teamNumber = 0;
+            if (args?.Length == 2) int.TryParse(args[1].ToString(), out teamNumber);
+            if (args?.Length == 3) {
+                BasePlayer bot = BasePlayer.FindBot(ulong.Parse(args[2]));
                 if (bot != null) {
                     joiner = bot;
                 }
             }
-            API_JoinGame(joiner, name);
+            API_JoinGame(joiner, name, teamNumber);
         }
 
-        [Command("leave", "lobby")]
+        private void cmdJoinGUI(BasePlayer player, string command, string[] args) {
+            ///create GUI
+            ///
+            if (args.Length == 0) return;
+            string gameType = args[0];
+            string arenaName = args[1];
+
+            CreateJoinGUI(player, gameType, arenaName);
+        }
+
         private void cmdLeave(BasePlayer player, string command, string[] args) => API_LeaveGame(player);
 
-        [Command("ready", "r")]
         private void cmdReady(BasePlayer player, string command, string[] args) => API_ReadyToGame(player);
         #endregion
 
@@ -147,7 +186,6 @@ namespace Oxide.Plugins
 
             player.inventory.Strip();
 
-            ResetPlayerStats(player);
             Teleport(player, GetSpawnPosition(player));
 
             // get kits
@@ -164,21 +202,22 @@ namespace Oxide.Plugins
                     Interface.CallHook("GiveKit", player, kitNameClothing);
                     player.ConsoleMessage($"Giving player clothing kit '{kitNameClothing}'");
                 }
-                player.SendNetworkUpdateImmediate();
+                ResetPlayerStats(player);
             });
+            player.SendNetworkUpdateImmediate();
         }
 
         private void ResetPlayerStats(BasePlayer player) {
-            if (player.IsWounded()) player.StopWounded();
+            player.SetPlayerFlag(BasePlayer.PlayerFlags.Wounded, false);
             player.health = 100f;
             player.metabolism.hydration.max = 500;
             player.metabolism.hydration.value = 500;
             player.metabolism.calories.max = 500;
             player.metabolism.calories.value = 500;
-            player.metabolism.bleeding.max = 0;
-            player.metabolism.temperature.max = 30;
-            player.metabolism.temperature.min = 30;
-            player.metabolism.temperature.value = 30;
+            player.metabolism.bleeding.value = 0;
+            player.metabolism.radiation_level.value = 0;
+            player.metabolism.radiation_poison.value = 0;
+            player.metabolism.SendChangesToClient();
         }
 
         private static void TickRemoveSleepers() {
@@ -223,16 +262,20 @@ namespace Oxide.Plugins
             Server.Command("writecfg");
         }
 
+        private static void GetTeams() {
+            var teams = Interface.CallHook("GetAllTeams");
+        }
         private static void RefreshFloatingTexts() {
             var warps = Interface.CallHook("GetAllZonesForFloatingText") as Dictionary<Vector3, string> ?? new Dictionary<Vector3, string>();
-            var games = Interface.CallHook("GetAllGames") as Dictionary<string, string> ?? new Dictionary<string, string>();
+            plugin.games = Interface.CallHook("GetAllGames") as Dictionary<string, string> ?? new Dictionary<string, string>();
+            plugin.teams = Interface.CallHook("GetAllTeams") as Dictionary<string, string> ?? new Dictionary<string, string>();
             var result = new Dictionary<Vector3, string>();
 
             foreach (var value in warps) {
                 var position = value.Key;
                 var gameName = value.Value;
                 var info = string.Empty;
-                if (games.TryGetValue(gameName, out info)) {
+                if (plugin.games.TryGetValue(gameName, out info)) {
                     result.Add(position, info);
                 }
             }
@@ -351,8 +394,9 @@ namespace Oxide.Plugins
 
             //Below must be handled by event to check if players are participating
             if (info == null || info.InitiatorPlayer == null) {
+                if (info != null) info.damageTypes.ScaleAll(0f);
                 plugin.Puts("[KGC] Can't get damage because: initiator == null");
-                return false;
+                return true;
             }
             //
             //if (info == null) {
@@ -365,8 +409,8 @@ namespace Oxide.Plugins
             return obj;
         }
 
-        private static void API_JoinGame(BasePlayer player, string name) {
-            Interface.CallHook(nameof(JoinGame), player, name);
+        private static void API_JoinGame(BasePlayer player, string name, int teamNumber) {
+            Interface.CallHook(nameof(JoinGame), player, name, teamNumber);
         }
 
         private static void API_LeaveGame(BasePlayer player) {
@@ -383,7 +427,7 @@ namespace Oxide.Plugins
         private string GetCustomKitNameClothing(BasePlayer player) { return null; }
         private object CanGetDamageFrom(BasePlayer victim, BasePlayer initiator) { return null; }
         private object CanJoinGame(BasePlayer player) { return null; }
-        private void JoinGame(BasePlayer player, string name) // Join game with name
+        private void JoinGame(BasePlayer player, string name, int teamNumber) // Join game with name
         {
             var obj = Interface.CallHook(nameof(CanJoinGame), player);
             //player.ConsoleMessage($"[Minigames] Can join game '{name}' : {obj == null} (Current game: {obj})");
@@ -554,6 +598,97 @@ namespace Oxide.Plugins
                 objectList.Add(name);
                 return name;
             }
+        }
+
+        private const string elemMain = "KingGamesCore.UI.Main";
+        void CreateJoinGUI(BasePlayer player, string gameType, string arenaName) {
+            var containerTop = new CuiElementContainer();
+
+            // Main panel
+            containerTop.Add(new CuiElement {
+                Name = elemMain,
+                Parent = "Overlay",
+                Components =
+                {
+                    new CuiImageComponent
+                    {
+                        Color = "0 0 0 0.8"
+                    },
+                    new CuiRectTransformComponent
+                    {
+                        AnchorMax = "0.7 0.6",
+                        AnchorMin = "0.3 0.4"
+                    },
+                    new CuiNeedsCursorComponent()
+                }
+            });
+            //close button
+            containerTop.Add(new CuiButton {
+                Text =
+                {
+                    Align = TextAnchor.MiddleCenter,
+                    Text = "X",
+                    FontSize = 15,
+                },
+                Button =
+                {
+                    Close = elemMain,
+                    Color = "1 0 0 1"
+                },
+                RectTransform =
+                {
+                    AnchorMin = "1 1",
+                    AnchorMax = "1 1",
+                    OffsetMin = "-25 -25",
+                    OffsetMax = "-5 -5"
+                }
+            }, elemMain);
+
+            //Teams Buttons
+            int teamCount = 2; //hardcoded for now.
+            float sidePadding = 0.03f;
+            float spacing = 0.02f;
+            float buttonWidth = ((1f - (sidePadding * 2) - (spacing * (teamCount - 1))) / teamCount);
+            float startX = 0f + sidePadding;
+
+            containerTop.Add(new CuiLabel {
+                Text =
+                    {
+                        Text = arenaName.Length > 0 ? arenaName : "Err",
+                        FontSize = 20,
+                        Align = TextAnchor.MiddleLeft
+                    },
+                RectTransform = { AnchorMin = $"0.05 0.73", AnchorMax = $"0.95 0.95" }
+            }, elemMain);
+
+            string teamScores;
+            plugin.teams.TryGetValue(arenaName, out teamScores);
+            int team1 = 0;
+            int team2 = 0;
+
+            if (teamScores != null && teamScores.Length > 0) {
+                int index = teamScores.IndexOf("|", StringComparison.Ordinal);
+                int.TryParse(teamScores.Substring(0, index), out team1);
+                int.TryParse(teamScores.Substring(index), out team2);
+            }
+
+            for (var i = 1; i <= teamCount; i++) {
+                int players = i == 1 ? team1 : i == 2 ? team2 : 0;
+                string color = teamColors[Math.Min(i, teamColors.Count) - 1];
+                CreateButton(ref containerTop, elemMain, color, $"Team {i} ({players})", 20, $"{startX} 0.40", $"{startX + buttonWidth} 0.70", $"join {arenaName} {i}");
+                startX += buttonWidth + spacing;
+            }
+
+            CreateButton(ref containerTop, elemMain, "0 15 0 1", "Spectate", 20, $"{0f + sidePadding} 0.05", $"{1f - sidePadding} 0.35", $"join {arenaName} 0");
+            CuiHelper.AddUi(player, containerTop);
+        }
+
+        void CreateButton(ref CuiElementContainer container, string panel, string color, string text, int size, string aMin, string aMax, string command, TextAnchor align = TextAnchor.MiddleCenter) {
+            container.Add(new CuiButton {
+                Button = { Color = color, Command = command, FadeIn = 0f, Close = panel },
+                RectTransform = { AnchorMin = aMin, AnchorMax = aMax },
+                Text = { Text = text, FontSize = size, Align = align }
+            }, panel);
         }
         #endregion
     }

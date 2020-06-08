@@ -107,7 +107,7 @@ namespace Oxide.Plugins
             if (ContainsZone(ZoneID)) {
                 ZSpawn spawnFile = zoneToSpawn.Find(x => x.zoneID == ZoneID);
                 if (spawnFile.isArena) {
-                    player.SendConsoleCommand($"chat.say \"/join {spawnFile.arenaName}\"");
+                    player.SendConsoleCommand($"chat.say \"/joingui arena {spawnFile.arenaName}\"");
                 } else {
                     List<Vector3> spawns = LoadSpawnpoints(spawnFile.spawnName);
 
@@ -172,11 +172,15 @@ namespace Oxide.Plugins
 
         #region Data
         void SaveSpawnData() {
-            Interface.Oxide.DataFileSystem.WriteObject($"ZoneTeleport", zoneToSpawn, true);
+            try {
+                Interface.Oxide.DataFileSystem.WriteObject($"ZoneTeleport", zoneToSpawn, true);
+            } catch (Exception e) { }
         }
 
         void LoadSpawnData() {
+            try { 
             zoneToSpawn = Interface.Oxide.DataFileSystem.ReadObject<List<ZSpawn>>($"ZoneTeleport");
+            } catch (Exception e) { }
         }
         #endregion
     }
