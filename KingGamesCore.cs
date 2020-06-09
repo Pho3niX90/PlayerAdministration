@@ -11,12 +11,13 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Games Core", "Pho3niX90", "0.1.0")]
+    [Info("Games Core", "Pho3niX90", "0.1.1")]
     [Description("")]
     public class KingGamesCore : RustPlugin
     {
         #region Vars
         [PluginReference] Plugin Spawns;
+        [PluginReference] Plugin NetGroupSwitch;
         private static KingGamesCore plugin;
         private static List<string> teamColors = new List<string>();
         private Dictionary<string, string> games;
@@ -121,7 +122,10 @@ namespace Oxide.Plugins
                     joiner = bot;
                 }
             }
-            API_JoinGame(joiner, name, teamNumber);
+            plugin.NetGroupSwitch?.Call("SwitchDim", joiner, name);
+            timer.Once(0.3f, () => {
+                API_JoinGame(joiner, name, teamNumber);
+            });
         }
 
         private void cmdJoinGUI(BasePlayer player, string command, string[] args) {

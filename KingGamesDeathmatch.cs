@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Scrim Deathmatch", "Pho3niX90", "1.4.0")]
+    [Info("Scrim Deathmatch", "Pho3niX90", "1.4.1")]
     [Description("")]
     public class KingGamesDeathmatch : RustPlugin
     {
@@ -127,13 +127,12 @@ namespace Oxide.Plugins
 
         private static void MarkDead(BasePlayer player) {
             var obj = plugin.GetPlayer(player);
-            if (obj != null)
-                obj.Died();
+            if (obj != null) obj.Died();
         }
 
-        private static void CleanArena(string t1Spawn, string t2Spawn) {
-            Vector3 t1 = plugin.GetFirstSpawnPoint(plugin.LoadSpawnpoints(t1Spawn));
-            Vector3 t2 = plugin.GetFirstSpawnPoint(plugin.LoadSpawnpoints(t2Spawn));
+        private static void CleanArena(GameController gControl) {
+            Vector3 t1 = plugin.GetFirstSpawnPoint(plugin.LoadSpawnpoints(gControl.definition.team1Spawn));
+            Vector3 t2 = plugin.GetFirstSpawnPoint(plugin.LoadSpawnpoints(gControl.definition.team2Spawn));
 
             Vector3 midPoint = (t1 + t2) / 2;
             float distance = Vector3.Distance(t1, t2) + 10;
@@ -143,7 +142,10 @@ namespace Oxide.Plugins
 
             foreach (var entity in entities) {
                 if (entity.IsValid() && entity.OwnerID != 0) {
-                    if (!(entity is BasePlayer)) entity?.Kill();
+                    BasePlayer owner = BasePlayer.FindByID(entity.OwnerID);
+                    GamePlayer player = plugin.GetPlayer(owner);
+                    if (owner == null || player == null || gControl.allPlayersIncSpec.Contains(player) || !owner.IsConnected)
+                        if (!(entity is BasePlayer)) entity?.Kill();
                 }
             }
         }
@@ -1490,7 +1492,7 @@ namespace Oxide.Plugins
             public void Restart() {
                 gameInProgress = false;
 
-                CleanArena(definition.team1Spawn, definition.team2Spawn);
+                CleanArena(this);
 
                 team1.ResetPlayers(true);
                 team2.ResetPlayers(true);
@@ -1586,7 +1588,7 @@ namespace Oxide.Plugins
             private void StartMatch() {
                 if (gameInProgress) return;
 
-                CleanArena(definition.team1Spawn, definition.team2Spawn);
+                CleanArena(this);
                 gameInProgress = true;
                 team1.ResetPlayers(false);
                 team2.ResetPlayers(false);

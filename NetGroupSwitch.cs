@@ -5,7 +5,7 @@ using WebSocketSharp;
 
 namespace Oxide.Plugins
 {
-    [Info("NetGroupSwitch", "Pho3niX90", "0.0.2")]
+    [Info("NetGroupSwitch", "Pho3niX90", "0.0.3")]
     [Description("")]
     public class NetGroupSwitch : RustPlugin
     {
@@ -49,6 +49,7 @@ namespace Oxide.Plugins
         #region Dimension Helpers
         private void SwitchDim(BasePlayer player, string dimension) {
             if (player == null) return;
+            Puts($"Player `{player.displayName}` has moved to dimension `{dimension}`");
             if (netIds.ContainsKey(player.net.ID)) {
                 netIds[player.net.ID] = dimension;
             } else if (!dimension.IsNullOrEmpty()) {
