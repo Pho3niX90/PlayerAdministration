@@ -1,11 +1,12 @@
 ﻿using Network;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 using WebSocketSharp;
 
 namespace Oxide.Plugins
 {
-    [Info("NetGroupSwitch", "Pho3niX90", "0.0.3")]
+    [Info("NetGroupSwitch", "Pho3niX90", "0.0.4")]
     [Description("")]
     public class NetGroupSwitch : RustPlugin
     {
@@ -13,9 +14,8 @@ namespace Oxide.Plugins
         void OnPlayerDisconnected(BasePlayer player, string reason) {
             if (HasDim(player)) netIds.Remove(player.net.ID);
         }
-
-        void Init() {
-            netIds.Add(BasePlayer.FindBot(7044139L).net.ID, "arena1");
+        void OnPlayerConnected(BasePlayer player) {
+            SwitchDim(player, string.Empty);
         }
 
         [ChatCommand("d")]
@@ -25,7 +25,7 @@ namespace Oxide.Plugins
         }
 
         void UpdatePlayers() {
-            foreach (BasePlayer target in BasePlayer.activePlayerList.Concat(BasePlayer.bots)) {
+            foreach (BasePlayer target in BasePlayer.activePlayerList) {
                 UpdateConnections(target);
             }
         }
@@ -58,7 +58,16 @@ namespace Oxide.Plugins
             UpdatePlayers();
         }
 
-        object CanNetworkTo(HeldEntity entity, BasePlayer target) => entity == null ? null : CanNetworkTo(entity.GetOwnerPlayer(), target);
+        object CanNetworkTo(HeldEntity entity, BasePlayer target) {
+            return entity == null ? null : CanNetworkTo(entity.GetOwnerPlayer(), target);
+        }
+        object CanNetworkTo(BaseProjectile entity, BasePlayer target) {
+            return entity == null ? null : CanNetworkTo(entity.GetOwnerPlayer(), target);
+        }
+        object CanNetworkTo(Projectile entity, BasePlayer target) {
+            return entity == null ? null : CanNetworkTo(entity.owner, target);
+        }
+
         string GetDim(BaseEntity ent) => netIds.ContainsKey(ent.net.ID) ? netIds[ent.net.ID] : string.Empty;
         bool HasDim(BaseEntity ent) => netIds.ContainsKey(ent.net.ID) && !netIds[ent.net.ID].IsNullOrEmpty();
         #endregion

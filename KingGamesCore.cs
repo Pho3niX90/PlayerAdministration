@@ -6,12 +6,13 @@ using Rust;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Games Core", "Pho3niX90", "0.1.1")]
+    [Info("Games Core", "Pho3niX90", "0.1.3")]
     [Description("")]
     public class KingGamesCore : RustPlugin
     {
@@ -20,8 +21,6 @@ namespace Oxide.Plugins
         [PluginReference] Plugin NetGroupSwitch;
         private static KingGamesCore plugin;
         private static List<string> teamColors = new List<string>();
-        private Dictionary<string, string> games;
-        private Dictionary<string, string> teams;
         #endregion
 
         #region Oxide Hooks
@@ -42,6 +41,12 @@ namespace Oxide.Plugins
             teamColors.Add("0 1 0 1");
             teamColors.Add("1 0 1 1");
             teamColors.Add("0 1 1 1");
+            UIObject ui = new UIObject();
+            //make sure there aren't leftover msgs 
+            foreach (var player in BasePlayer.activePlayerList) {
+                ui.Destroy(player, "DeathNotice");
+                ui.Destroy(player, "DeathNotice_DropShadow");
+            }
         }
 
         private void OnServerInitialized() {
@@ -50,10 +55,8 @@ namespace Oxide.Plugins
 
             timer.Once(1f, () => {
                 MoveAllPlayers();
-                RefreshFloatingTexts();
             });
 
-            timer.Every(config.floatingTextRefreshRate, RefreshFloatingTexts);
 
             if (config.sleepersRemoveCycle > 0) {
                 timer.Every(config.sleepersRemoveCycle, TickRemoveSleepers);
@@ -80,7 +83,10 @@ namespace Oxide.Plugins
 
         object OnEntityTakeDamage(BasePlayer player, HitInfo info) => API_CanGetDamageFrom(player, info);
 
-        private void OnPlayerDeath(BasePlayer player, HitInfo info) => AutoRespawn(player);
+        private void OnPlayerDeath(BasePlayer player, HitInfo info) {
+            if (info == null || info.Initiator == null) return;
+            AutoRespawn(player);
+        }
 
         private void OnPlayerSleep(BasePlayer player) => AutoWakeup(player);
 
@@ -102,32 +108,30 @@ namespace Oxide.Plugins
         [ConsoleCommand("join")]
         private void cmdConsoleJoin(ConsoleSystem.Arg arg) {
             BasePlayer player = arg.Player();
-            Puts("throwing command");
             if (player == null) return;
-            Puts("throwing command2");
             cmdJoin(player, "join", arg.Args);
         }
         private void cmdJoin(BasePlayer player, string command, string[] args) {
-            plugin.Puts("Joining");
             var name = args?.Length > 0 ? args[0].ToLower() : "null";
-            foreach (var x in args) {
-                plugin.Puts(x.ToString());
-            }
             BasePlayer joiner = player;
             int teamNumber = 0;
-            if (args?.Length == 2) int.TryParse(args[1].ToString(), out teamNumber);
+            if (args?.Length == 2) int.TryParse(args[1].Trim().ToString(), out teamNumber);
             if (args?.Length == 3) {
                 BasePlayer bot = BasePlayer.FindBot(ulong.Parse(args[2]));
                 if (bot != null) {
                     joiner = bot;
                 }
+                teamNumber = 1;
             }
-            plugin.NetGroupSwitch?.Call("SwitchDim", joiner, name);
+            SwitchDim(joiner, name);
             timer.Once(0.3f, () => {
                 API_JoinGame(joiner, name, teamNumber);
             });
         }
 
+        void SwitchDim(BasePlayer joiner, string dimension) {
+            plugin.NetGroupSwitch?.Call("SwitchDim", joiner, dimension);
+        }
         private void cmdJoinGUI(BasePlayer player, string command, string[] args) {
             ///create GUI
             ///
@@ -172,13 +176,13 @@ namespace Oxide.Plugins
 
         private static void Teleport(BasePlayer player, Vector3 position) {
             if (player.IsAlive()) {
+                player.PauseFlyHackDetection(2);
                 player.ConsoleMessage($"Teleporting to {position}");
                 player.EnsureDismounted();
                 player.SetPlayerFlag(BasePlayer.PlayerFlags.ReceivingSnapshot, true);
                 player.Teleport(position);
                 player.UpdateNetworkGroup();
                 player.SendNetworkUpdateImmediate();
-                //player.ClientRPCPlayer(null, player, "StartLoading");
                 player.SendFullSnapshot();
             } else {
                 player.RespawnAt(position, new Quaternion());
@@ -186,7 +190,7 @@ namespace Oxide.Plugins
         }
 
         private void RefreshPlayer(BasePlayer player) {
-            if (!player.IsConnected || !player.IsAlive()) return;
+            if (!player.IsConnected) return;
 
             player.inventory.Strip();
 
@@ -194,17 +198,17 @@ namespace Oxide.Plugins
 
             // get kits
             var kitName = API_GetKitName(player);
+            Puts($"Kit {kitName} for player {player.displayName}");
             var kitNameClothing = API_GetKitClothing(player);
             if (string.IsNullOrEmpty(kitName)) {
                 kitName = config.lobbyKit;
+                Puts("Giving lobby kit");
             }
 
             timer.Once(0.4f, () => {
-                player.ConsoleMessage($"Giving player kit '{kitName}'");
                 Interface.CallHook("GiveKit", player, kitName);
                 if (kitNameClothing != null) {
                     Interface.CallHook("GiveKit", player, kitNameClothing);
-                    player.ConsoleMessage($"Giving player clothing kit '{kitNameClothing}'");
                 }
                 ResetPlayerStats(player);
             });
@@ -219,6 +223,7 @@ namespace Oxide.Plugins
             player.metabolism.calories.max = 500;
             player.metabolism.calories.value = 500;
             player.metabolism.bleeding.value = 0;
+            player.metabolism.bleeding.max = 0;
             player.metabolism.radiation_level.value = 0;
             player.metabolism.radiation_poison.value = 0;
             player.metabolism.SendChangesToClient();
@@ -263,49 +268,26 @@ namespace Oxide.Plugins
             Server.Command("weather.rain 0");
             Server.Command("antihack.terrain_protection 0");
             Server.Command("antihack.terrain_kill false");
+
+
+            Server.Command("stag.population 0");
+            Server.Command("bear.population 0");
+            Server.Command("boar.population 0");
+            Server.Command("chicken.population 0");
+            Server.Command("wolf.population 0");
+            Server.Command("horse.population 0");
+            Server.Command("hotairballoon.population 0");
+            Server.Command("minicopter.population 0");
+            Server.Command("motorrowboat.population 0");
+            Server.Command("rhib.rhibpopulation 0");
+            Server.Command("ridablehorse.population 0");
+            Server.Command("scraptransporthelicopter.population 0");
+
             Server.Command("writecfg");
         }
 
-        private static void GetTeams() {
-            var teams = Interface.CallHook("GetAllTeams");
-        }
-        private static void RefreshFloatingTexts() {
-            var warps = Interface.CallHook("GetAllZonesForFloatingText") as Dictionary<Vector3, string> ?? new Dictionary<Vector3, string>();
-            plugin.games = Interface.CallHook("GetAllGames") as Dictionary<string, string> ?? new Dictionary<string, string>();
-            plugin.teams = Interface.CallHook("GetAllTeams") as Dictionary<string, string> ?? new Dictionary<string, string>();
-            var result = new Dictionary<Vector3, string>();
-
-            foreach (var value in warps) {
-                var position = value.Key;
-                var gameName = value.Value;
-                var info = string.Empty;
-                if (plugin.games.TryGetValue(gameName, out info)) {
-                    result.Add(position, info);
-                }
-            }
-
-            foreach (var value in result) {
-                var position = value.Key + config.warpsTextOffset;
-                var text = value.Value;
-
-                foreach (var player in BasePlayer.activePlayerList) {
-                    if (Vector3.Distance(player.transform.position, position) > config.maxFloatingTextDistance) {
-                        continue;
-                    }
-
-                    if (player.Connection.authLevel == 0) {
-                        player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, true);
-                        player.SendNetworkUpdateImmediate();
-                    }
-
-                    player.SendConsoleCommand("ddraw.text", config.floatingTextRefreshRate, Color.white, position, text);
-
-                    if (player.Connection.authLevel == 0) {
-                        player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, false);
-                        player.SendNetworkUpdateImmediate();
-                    }
-                }
-            }
+        private Dictionary<string, string> GetTeams() {
+            return Interface.CallHook("GetAllTeams") as Dictionary<string, string>;
         }
         #endregion
 
@@ -393,20 +375,14 @@ namespace Oxide.Plugins
             return ((string)obj);
         }
 
-        private static object API_CanGetDamageFrom(BasePlayer victim, HitInfo info) {
+        private object API_CanGetDamageFrom(BasePlayer victim, HitInfo info) {
             // null is true
 
             //Below must be handled by event to check if players are participating
             if (info == null || info.InitiatorPlayer == null) {
-                if (info != null) info.damageTypes.ScaleAll(0f);
-                plugin.Puts("[KGC] Can't get damage because: initiator == null");
+                Puts($"[KGC] {victim?.displayName} Can't get damage because: initiator == null");
                 return true;
             }
-            //
-            //if (info == null) {
-            //    plugin.Puts("[KGC] Can't get damage because: info == null");
-            //    return false;
-            //}
 
             var obj = Interface.CallHook(nameof(CanGetDamageFrom), victim, info);
             if (obj != null) plugin.Puts(obj.ToString());
@@ -419,7 +395,10 @@ namespace Oxide.Plugins
 
         private static void API_LeaveGame(BasePlayer player) {
             Interface.CallHook(nameof(LeaveGame), player);
-            plugin.NextTick(() => Interface.CallHook("RefreshPlayer", player));
+            plugin.NextTick(() => {
+                plugin.SwitchDim(player, string.Empty);
+                Interface.CallHook("RefreshPlayer", player);
+            });
         }
 
         private static void API_ReadyToGame(BasePlayer player) {
@@ -453,7 +432,7 @@ namespace Oxide.Plugins
         float SimpleUI_Left = 0f;
         float SimpleUI_MaxWidth = 1f;
         float SimpleUI_MaxHeight = 1f;
-        const float SimpleUI_HideTimer = 0.9f;
+        const float SimpleUI_HideTimer = 0.7f;
         List<string> tags = new List<string> {
             "</color>",
             "</size>",
@@ -472,6 +451,9 @@ namespace Oxide.Plugins
             float fadeIn = 0.1f;
 
             UIObject ui = new UIObject();
+            //make sure there aren't leftover msgs 
+            //ui.Destroy(player, "DeathNotice");
+            //ui.Destroy(player, "DeathNotice_DropShadow");
 
             ui.AddText("DeathNotice_DropShadow",
                 SimpleUI_Left + 0.001, SimpleUI_Top + 0.001,
@@ -479,9 +461,9 @@ namespace Oxide.Plugins
                 shadowColor,
                 StripTags(message),
                 SimpleUI_FontSize,
-                "Hud.Menu", 3, fadeIn, fadeIn);
+                "Hud", 3, fadeIn, fadeIn);
 
-            ui.AddText("DeathNotice", SimpleUI_Left, SimpleUI_Top, SimpleUI_MaxWidth, SimpleUI_MaxHeight, noticeColor, message, SimpleUI_FontSize, "Hud.Menu", 3, fadeIn, fadeIn);
+            ui.AddText("DeathNotice", SimpleUI_Left, SimpleUI_Top, SimpleUI_MaxWidth, SimpleUI_MaxHeight, noticeColor, message, SimpleUI_FontSize, "Hud", 3, fadeIn, fadeIn);
 
             ui.Draw(player);
             timer.Once(timeout, () => {
@@ -557,6 +539,9 @@ namespace Oxide.Plugins
             public void Destroy(BasePlayer player) {
                 foreach (string uiName in objectList)
                     CommunityEntity.ServerInstance.ClientRPCEx(new Network.SendInfo() { connection = player.net.connection }, null, "DestroyUI", uiName);
+            }
+            public void Destroy(BasePlayer player, string uiName) {
+                CommunityEntity.ServerInstance.ClientRPCEx(new Network.SendInfo() { connection = player.net.connection }, null, "DestroyUI", uiName);
             }
 
             public string AddText(string name, double left, double top, double width, double height, UIColor color, string text, int textsize = 15, string parent = "Hud", int alignmode = 0, float fadeIn = 0f, float fadeOut = 0f) {
@@ -665,15 +650,16 @@ namespace Oxide.Plugins
                 RectTransform = { AnchorMin = $"0.05 0.73", AnchorMax = $"0.95 0.95" }
             }, elemMain);
 
+            var teams = GetTeams();
             string teamScores;
-            plugin.teams.TryGetValue(arenaName, out teamScores);
+            teams.TryGetValue(arenaName, out teamScores);
             int team1 = 0;
             int team2 = 0;
 
             if (teamScores != null && teamScores.Length > 0) {
                 int index = teamScores.IndexOf("|", StringComparison.Ordinal);
                 int.TryParse(teamScores.Substring(0, index), out team1);
-                int.TryParse(teamScores.Substring(index), out team2);
+                int.TryParse(teamScores.Substring(index + 1), out team2);
             }
 
             for (var i = 1; i <= teamCount; i++) {

@@ -7,16 +7,17 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-namespace Oxide.Plugins {
+namespace Oxide.Plugins
+{
     [Info("Kits Core", "Pho3niX90", "1.0.0")]
     [Description("")]
-    public class Kits : RustPlugin {
+    public class Kits : RustPlugin
+    {
         #region Vars
 
         private const string commandWipe = "kits.wipe";
         private const string commandConstant = "kits.core";
         private const string commandGiveConstant = "kits.give";
-        private const string commandConvertConstant = "kits.convert";
 
         #endregion
 
@@ -24,7 +25,7 @@ namespace Oxide.Plugins {
 
         private void Init() {
             foreach (var kit in config.kits) {
-                if (permission.PermissionExists(kit.permission) == false) {
+                if (!permission.PermissionExists(kit.permission)) {
                     permission.RegisterPermission(kit.permission, this);
                 }
             }
@@ -37,7 +38,6 @@ namespace Oxide.Plugins {
             cmd.AddConsoleCommand(commandConstant, this, nameof(cmdControlConsole));
             cmd.AddConsoleCommand(commandWipe, this, nameof(cmdControlConsole));
             cmd.AddConsoleCommand(commandGiveConstant, this, nameof(cmdControlConsole));
-            cmd.AddConsoleCommand(commandConvertConstant, this, nameof(cmdControlConsole));
             LoadData();
         }
 
@@ -57,14 +57,14 @@ namespace Oxide.Plugins {
             var args = arg.Args ?? new string[] { };
             var command = arg.cmd?.FullName;
 
-            if (command == commandWipe && arg.IsAdmin == true) {
+            if (command == commandWipe && arg.IsAdmin) {
                 Data = new PluginData();
                 SaveData();
                 SendReply(arg, "Cooldown data was cleared for all!");
                 return;
             }
 
-            if (command == commandGiveConstant && arg.IsAdmin == true) {
+            if (command == commandGiveConstant && arg.IsAdmin) {
                 var playerName = args.Length > 0 ? args[0] : "null";
                 var kitName = args.Length > 1 ? args[1] : "null";
                 var player = FindPlayer(playerName);
@@ -83,15 +83,6 @@ namespace Oxide.Plugins {
                 SendReply(arg, $"You gave kit {kitName} to {player.displayName}!");
                 return;
             }
-
-            if (command == commandConvertConstant && arg.IsAdmin) {
-                var before = config.kits.Length;
-                ConvertUmodKits();
-                var after = config.kits.Length;
-                SendReply(arg, $"{after - before} was converted!");
-                return;
-            }
-
             cmdControlChat(arg.Player(), command, args);
         }
 
@@ -101,7 +92,7 @@ namespace Oxide.Plugins {
             var name = args.Length > 1 ? args[1] : "null";
             var refreshUI = args.Contains("ui.refresh");
             var sendContent = args.Contains("items") || args.Contains("info") || args.Contains("content");
-            if (sendContent == true) {
+            if (sendContent) {
                 SendInfo(player, name);
                 return;
             }
@@ -151,7 +142,7 @@ namespace Oxide.Plugins {
         #region Core
 
         private void TryToClaimKit(BasePlayer player, string name, bool refreshUI) {
-            if (refreshUI == true) {
+            if (refreshUI) {
                 NextTick(() => {
                     Interface.CallHook("OnKitUIRefreshRequested", player);
                 });
@@ -163,12 +154,12 @@ namespace Oxide.Plugins {
                 return;
             }
 
-            if (CanUse(player) == false) {
+            if (!CanUse(player)) {
                 SendMessage(player, Message.CantUse);
                 return;
             }
 
-            if (HasPermission(player, kit.permission) == false || kit.forAPI == true) {
+            if (!HasPermission(player, kit.permission) || kit.forAPI) {
                 SendMessage(player, Message.Permission);
                 return;
             }
@@ -184,7 +175,7 @@ namespace Oxide.Plugins {
                 SendMessage(player, Message.UsesLeftChat, "{left}", left - 1);
             }
 
-            if (kit.block > 0 && kit.blockBypass == false) {
+            if (kit.block > 0 && !kit.blockBypass) {
                 var unblockDate = SaveRestore.SaveCreatedTime.AddSeconds(kit.block);
                 var leftSpan = unblockDate - DateTime.UtcNow;
 
@@ -253,22 +244,15 @@ namespace Oxide.Plugins {
             SendMessage(player, Message.KitsContentChat, "{name}", kit.displayName, "{list}", contentString);
         }
 
-        private void ConvertUmodKits() {
-            var obj = Interface.Oxide.DataFileSystem.ReadObject<uModData>("Kits");
-            var kits = obj.Kits.Values.Select(x => x.ToNormalKit()).ToArray();
-            config.kits = config.kits.Concat(kits).ToArray();
-            SaveConfig();
-        }
-
         private Kit[] GetAvailableKits(BasePlayer player) {
             var list = new List<Kit>();
 
             foreach (var kit in config.kits) {
-                if (kit.forAPI == true) {
+                if (kit.forAPI) {
                     continue;
                 }
 
-                if (kit.showWithoutPermission == false && HasPermission(player.UserIDString, kit.permission) == false) {
+                if (!kit.showWithoutPermission && !HasPermission(player.UserIDString, kit.permission)) {
                     continue;
                 }
 
@@ -281,7 +265,7 @@ namespace Oxide.Plugins {
         private static KitInfo GetDataKitInfo(BasePlayer player, string kitName, DataEntry data = null) {
             data = data ?? Data.Get(player.UserIDString);
             var kitInfo = (KitInfo)null;
-            if (data.kitsInfo.TryGetValue(kitName, out kitInfo) == false) {
+            if (!data.kitsInfo.TryGetValue(kitName, out kitInfo)) {
                 kitInfo = new KitInfo();
                 data.kitsInfo.Add(kitName, kitInfo);
             }
@@ -290,12 +274,12 @@ namespace Oxide.Plugins {
         }
 
         private void LoadImages() {
-            var previews = config.kits.Where(x => string.IsNullOrEmpty(x.url) == false).Select(xx => xx.url).ToArray();
+            var previews = config.kits.Where(x => !string.IsNullOrEmpty(x.url)).Select(xx => xx.url).ToArray();
             var contents = config.kits.SelectMany(x => x.items).Select(x => x.shortname).Distinct().ToArray();
             var total = previews.Concat(contents).ToArray();
 
             foreach (var url in total) {
-                if (string.IsNullOrEmpty(url) == true) {
+                if (string.IsNullOrEmpty(url)) {
                     continue;
                 }
 
@@ -305,8 +289,6 @@ namespace Oxide.Plugins {
                     AddImage($"https://rustlabs.com/img/items180/{url}.png");
                 }
             }
-
-            Puts($"Loaded {total.Count()} images");
         }
 
         #endregion
@@ -314,7 +296,7 @@ namespace Oxide.Plugins {
         #region Helpers
 
         private void LoadKits(BasePlayer player = null) {
-            if (player != null && player.IsAdmin == false) {
+            if (player != null && !player.IsAdmin) {
                 SendMessage(player, Message.Permission);
                 return;
             }
@@ -324,7 +306,7 @@ namespace Oxide.Plugins {
         }
 
         private void UpdateKitItems(BasePlayer player, string name) {
-            if (player.IsAdmin == false) {
+            if (!player.IsAdmin) {
                 SendMessage(player, Message.Permission);
                 return;
             }
@@ -343,7 +325,7 @@ namespace Oxide.Plugins {
         }
 
         private void RemoveExistingKit(BasePlayer player, string name) {
-            if (player.IsAdmin == false) {
+            if (!player.IsAdmin) {
                 SendMessage(player, Message.Permission);
                 return;
             }
@@ -408,8 +390,9 @@ namespace Oxide.Plugins {
             foreach (var value in kit.items) {
                 value.GiveTo(player);
             }
+            if (!kit.forAPI)
+                SendMessage(player, Message.KitReceived, "{name}", kit.name);
 
-            SendMessage(player, Message.KitReceived, "{name}", kit.name);
             Interface.Oxide.CallHook("OnKitRedeemed", player, kit.name);
         }
 
@@ -458,7 +441,8 @@ namespace Oxide.Plugins {
 
         private static ConfigData config = new ConfigData();
 
-        private class ConfigData {
+        private class ConfigData
+        {
             [JsonProperty(PropertyName = "Command")]
             public string[] commands =
             {
@@ -543,7 +527,7 @@ namespace Oxide.Plugins {
             {Message.CooldownUI, "Cooldown: {d} {h} {m} {s}"},
 
             {Message.WipeblockChat, "Kit available in {d} {h} {m} {s} left"},
-            {Message.WipeblockUI, "Wipe block: {h} {m} {s}"},
+            {Message.WipeblockUI, "Wipe block: {d} {h} {m} {s}"},
 
             {Message.UsesLimitChat, "You already used maximal amount of that kit! (Limit: {limit})"},
             {Message.UsesLeftChat, "Uses left: {left}"},
@@ -560,7 +544,8 @@ namespace Oxide.Plugins {
             {Message.ItemChatEntry, " {name} x{amount}\n"}
         };
 
-        private enum Message {
+        private enum Message
+        {
             Usage,
             Permission,
             CantUse,
@@ -651,17 +636,20 @@ namespace Oxide.Plugins {
         private bool corruptedData;
         private Timer saveTimer;
 
-        private class DataEntry {
+        private class DataEntry
+        {
             public Dictionary<string, KitInfo> kitsInfo = new Dictionary<string, KitInfo>();
         }
 
-        private class KitInfo {
+        private class KitInfo
+        {
             public DateTime lastUse;
             public int uses;
         }
 
         private static PluginData Data = new PluginData();
-        private class PluginData {
+        private class PluginData
+        {
             // ReSharper disable once MemberCanBePrivate.Local
             public Dictionary<string, DataEntry> values = new Dictionary<string, DataEntry>();
             public DateTime creationTime = SaveRestore.SaveCreatedTime;
@@ -675,11 +663,11 @@ namespace Oxide.Plugins {
                 }
 
                 var value = (DataEntry)null;
-                if (cache.TryGetValue(key, out value) == true) {
+                if (cache.TryGetValue(key, out value)) {
                     return value;
                 }
 
-                if (values.TryGetValue(key, out value) == false) {
+                if (!values.TryGetValue(key, out value)) {
                     value = new DataEntry();
                     values.Add(key, value);
                 }
@@ -716,7 +704,7 @@ namespace Oxide.Plugins {
         }
 
         private void SaveData(string keyName = filename) {
-            if (corruptedData == false && Data != null) {
+            if (!corruptedData && Data != null) {
                 Data.cache.Clear();
                 Interface.Oxide.DataFileSystem.WriteObject($"{Name}/{keyName}", Data);
             }
@@ -726,7 +714,8 @@ namespace Oxide.Plugins {
 
         #region BaseItem Support 1.1.0
 
-        private class BaseItem {
+        private class BaseItem
+        {
             [JsonProperty(PropertyName = "Command")]
             public string command = string.Empty;
 
@@ -789,12 +778,12 @@ namespace Oxide.Plugins {
                             break;
                     }
 
-                    if (container == null || item.MoveToContainer(container, slot) == false) {
+                    if (container == null || !item.MoveToContainer(container, slot)) {
                         player.GiveItem(item);
                     }
                 }
 
-                if (string.IsNullOrEmpty(command) == false) {
+                if (!string.IsNullOrEmpty(command)) {
                     RunCommand(player);
                 }
             }
@@ -821,7 +810,7 @@ namespace Oxide.Plugins {
                     return null;
                 }
 
-                if (randomizeSkin == true) {
+                if (randomizeSkin) {
                     Interface.CallHook("SetRandomSkin", null, item);
                 }
 
@@ -901,7 +890,8 @@ namespace Oxide.Plugins {
 
         #region Classes
 
-        private class Kit {
+        private class Kit
+        {
             [JsonProperty(PropertyName = "Shortname", Order = 1)]
             public string name = string.Empty;
 
@@ -961,11 +951,13 @@ namespace Oxide.Plugins {
             public bool blockBypass = false;
         }
 
-        private class uModData {
+        private class uModData
+        {
             public Dictionary<string, uModKit> Kits = new Dictionary<string, uModKit>();
         }
 
-        private class uModKit {
+        private class uModKit
+        {
             public string name;
             public string description;
             public int max;
@@ -992,7 +984,8 @@ namespace Oxide.Plugins {
             }
         }
 
-        private class uModKitItem {
+        private class uModKitItem
+        {
             public int itemid;
             public string container;
             public int amount;
@@ -1111,7 +1104,7 @@ namespace Oxide.Plugins {
         #region Graphical API
 
         private string GetPlayerKitsForUI(BasePlayer player) {
-            var kits = config.kits.Where(x => x.forAPI == false);
+            var kits = config.kits.Where(x => !x.forAPI);
             var list = new List<KitUI>();
             var data = Data.Get(player.UserIDString);
 
@@ -1179,7 +1172,7 @@ namespace Oxide.Plugins {
 
         private string GetUIMessage(BasePlayer player, Kit kit, KitInfo kitInfo) {
             if (!HasPermission(player, kit.permission)) {
-                if (kit.showWithoutPermission == false) {
+                if (!kit.showWithoutPermission) {
                     return null;
                 }
 
@@ -1189,15 +1182,15 @@ namespace Oxide.Plugins {
             if (kit.uses > 0) {
                 var left = kit.uses - kitInfo.uses;
                 if (left <= 0) {
-                    return kit.showWithoutUses == false ? null : GetMessage(Message.UsesLeftUI, "{limit}", 0);
+                    return !kit.showWithoutUses ? null : GetMessage(Message.UsesLeftUI, "{limit}", 0);
                 }
             }
 
-            if (kit.block > 0 && kit.blockBypass == false) {
+            if (kit.block > 0 && !kit.blockBypass) {
                 var unblockDate = SaveRestore.SaveCreatedTime.AddSeconds(kit.block);
                 var leftSpan = unblockDate - DateTime.UtcNow;
                 if (leftSpan.TotalSeconds > 0) {
-                    return kit.showIfWipeBlocked == false ? null : GetMessage(Message.WipeblockUI, player.UserIDString, "{d}", GetTimeLeft(leftSpan.Days, "d") , "{h}", GetTimeLeft(leftSpan.Hours, "h"), "{m}", GetTimeLeft(leftSpan.Minutes, "m"), "{s}", GetTimeLeft(leftSpan.Seconds, "s"));
+                    return !kit.showIfWipeBlocked ? null : GetMessage(Message.WipeblockUI, player.UserIDString, "{d}", GetTimeLeft(leftSpan.Days, "d"), "{h}", GetTimeLeft(leftSpan.Hours, "h"), "{m}", GetTimeLeft(leftSpan.Minutes, "m"), "{s}", GetTimeLeft(leftSpan.Seconds, "s"));
                 } else {
                     kit.blockBypass = true;
                 }
@@ -1207,7 +1200,7 @@ namespace Oxide.Plugins {
                 var unblockDate = kitInfo.lastUse.AddSeconds(kit.cooldown);
                 var leftSpan = unblockDate - DateTime.UtcNow;
                 if (leftSpan.TotalSeconds > 0) {
-                    return kit.showIfOnCooldown == false ? null : GetMessage(Message.CooldownUI, player.UserIDString, "{d}", GetTimeLeft(leftSpan.Days, "d"), "{h}", GetTimeLeft(leftSpan.Hours, "h"), "{m}", GetTimeLeft(leftSpan.Minutes, "m"), "{s}", GetTimeLeft(leftSpan.Seconds, "s"));
+                    return !kit.showIfOnCooldown ? null : GetMessage(Message.CooldownUI, player.UserIDString, "{d}", GetTimeLeft(leftSpan.Days, "d"), "{h}", GetTimeLeft(leftSpan.Hours, "h"), "{m}", GetTimeLeft(leftSpan.Minutes, "m"), "{s}", GetTimeLeft(leftSpan.Seconds, "s"));
                 }
             }
 
@@ -1218,7 +1211,8 @@ namespace Oxide.Plugins {
 
         #region Kit UI Class 1.2.0
 
-        private class KitUI {
+        private class KitUI
+        {
             public string name = string.Empty;
             public string displayName = string.Empty;
             public int cooldown = 3600;

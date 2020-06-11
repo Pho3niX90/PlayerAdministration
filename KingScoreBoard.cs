@@ -1,4 +1,4 @@
-﻿//Requires: Clans
+﻿
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Oxide.Core;
@@ -37,6 +37,7 @@ namespace Oxide.Plugins
         }
 
         void Loaded() {
+            mapCreationDate = SaveRestore.SaveCreatedTime.ToLocalTime().ToString("yyyy_MM_dd");
             lineNum = new Dictionary<string, int>();
             _clansScores = new Dictionary<string, ClanScoreboard>();
             _playerScores = new Dictionary<ulong, PlayerScoreboard>();
@@ -59,7 +60,6 @@ namespace Oxide.Plugins
                 DestroyAllMarkers();
                 CreateAllMarkers();
             }
-            SaveData();
         }
 
         void Unload() {
@@ -78,9 +78,6 @@ namespace Oxide.Plugins
 
 
             SaveData();
-
-            _playerScores.Clear();
-            _clansScores.Clear();
         }
 
         #region Hooks
@@ -91,13 +88,14 @@ namespace Oxide.Plugins
         }
 
         void OnLootEntity(BasePlayer player, BaseEntity entity) {
+            if (!config.tournamentMode) return;
             ulong playerId = player.userID;
             if (playerId == 0) return;
             string clan = GetClan(playerId);
 
             int type = CrateType(entity);
             uint crateId = entity.net.ID;
-            if (cratesLooted.ContainsKey(crateId)) return;
+            if (cratesLooted != null && cratesLooted.ContainsKey(crateId)) return;
             if (!_playerScores.ContainsKey(playerId)) return;
 
             if (!_clansScores.ContainsKey(clan)) {
@@ -214,15 +212,17 @@ namespace Oxide.Plugins
                     JArray members = GetClanMembers(clan);
                     if (members == null && members.Count == 0) {
                         BasePlayer Player = BasePlayer.FindByID(cupboard.OwnerID);
-                        SendReply(Player, "You aren't in a clan");
-                        MsgAdminsOnline($"Player `{Player.displayName} ({Player.userID})` is not part of a clan");
+                        if (config.tournamentMode) MsgAdminsOnline($"Player `{Player.displayName} ({Player.userID})` is not part of a clan");
                     } else {
+                        if (!config.tournamentMode) return;
                         foreach (string userid in members) {
                             if (userid == null || userid.IsNullOrEmpty()) return;
                             BasePlayer.FindByID(ulong.Parse(userid))?.Kick("You have been eliminated!");
                             string clantagattack = GetClan((cupboard.lastAttacker as BasePlayer).UserIDString);
-                            PrintToChat($"Team <color=red>{clan}</color> has been eliminated by <color=red>{clantagattack}</color>!");
-                            permission.GrantUserPermission(userid, "whitelist.kicked", null);
+                            if (config.tournamentMode) {
+                                PrintToChat($"Team <color=red>{clan}</color> has been eliminated by <color=red>{clantagattack}</color>!");
+                                permission.GrantUserPermission(userid, "whitelist.kicked", null);
+                            }
                         }
                     }
                 }
@@ -244,8 +244,8 @@ namespace Oxide.Plugins
                 BaseEntity TC = Entity as BuildingPrivlidge;
                 string clan = GetClan(Player.userID);
                 if (clan == null || clan.Trim().IsNullOrEmpty()) {
-                    SendReply(Player, "You aren't in a clan");
-                    MsgAdminsOnline($"Player `{Player.displayName} ({Player.userID})` is not part of a clan");
+                    if (config.tournamentMode) SendReply(Player, "You aren't in a clan");
+                    if(config.tournamentMode) MsgAdminsOnline($"Player `{Player.displayName} ({Player.userID})` is not part of a clan");
                 }
 
                 if (clan.Trim().IsNullOrEmpty()) {
@@ -418,8 +418,8 @@ namespace Oxide.Plugins
                 }
             } else {
                 BasePlayer player = BasePlayer.FindByID(playerId);
-                SendReply(player, "You aren't in a clan");
-                MsgAdminsOnline($"Player `{player.displayName} ({playerId})` is not part of a clan");
+                if (config.tournamentMode) SendReply(player, "You aren't in a clan");
+                if (config.tournamentMode) MsgAdminsOnline($"Player `{player.displayName} ({playerId})` is not part of a clan");
             }
         }
 
@@ -718,30 +718,36 @@ namespace Oxide.Plugins
 
         #region Data
         void SaveData() {
+            Puts("Saving");
             try {
-                Interface.Oxide.DataFileSystem.WriteObject<Dictionary<ulong, PlayerScoreboard>>($"ScoreBoard/allPlayers_{mapCreationDate}", _playerScores, true);
+                Interface.Oxide.DataFileSystem.WriteObject($"ScoreBoard/allPlayers_{mapCreationDate}", _playerScores, true);
             } catch (Exception e) {
-
+                Puts(e.Message);
+                Puts(e.StackTrace.ToString());
             }
 
             try {
-                Interface.Oxide.DataFileSystem.WriteObject<Dictionary<string, ClanScoreboard>>($"ScoreBoard/allClans_{mapCreationDate}", _clansScores, true);
+                Interface.Oxide.DataFileSystem.WriteObject($"ScoreBoard/allClans_{mapCreationDate}", _clansScores, true);
             } catch (Exception e) {
-
+                Puts(e.Message);
+                Puts(e.StackTrace.ToString());
             }
         }
 
         void LoadData(bool reset = false) {
+            Puts("Loading");
             try {
                 _playerScores = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<ulong, PlayerScoreboard>>($"ScoreBoard/allPlayers_{mapCreationDate}");
             } catch (Exception e) {
-
+                Puts(e.Message);
+                Puts(e.StackTrace.ToString());
             }
 
             try {
                 _clansScores = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<string, ClanScoreboard>>($"ScoreBoard/allClans_{mapCreationDate}");
             } catch (Exception e) {
-
+                Puts(e.Message);
+                Puts(e.StackTrace.ToString());
             }
 
             if (config.tournamentMode) {
@@ -751,7 +757,6 @@ namespace Oxide.Plugins
                     if (clan == null) Puts("Clan: " + c.clanTag + " is being reported as non existent");
                 }
             }
-            SaveData();
         }
         #endregion
 

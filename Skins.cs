@@ -1111,6 +1111,8 @@ namespace Oxide.Plugins
                     duplicate._condition = item._condition;
                 }
 
+                duplicate.name = item.name;
+
                 if (item.contents != null)
                 {
                     duplicate.contents.capacity = item.contents.capacity;

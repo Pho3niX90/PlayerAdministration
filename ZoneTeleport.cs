@@ -1,10 +1,12 @@
-﻿using Oxide.Core;
+﻿using ConVar;
+using Oxide.Core;
 using Oxide.Core.Configuration;
 using Oxide.Core.Plugins;
 using System;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
+using WebSocketSharp;
 
 namespace Oxide.Plugins
 {
@@ -23,12 +25,24 @@ namespace Oxide.Plugins
             public string zoneID;
             public string spawnName;
             public string arenaName;
+            public string arenaDescription;
 
+            public ZSpawn() { }
             public ZSpawn(string zID, string name) {
                 zoneID = zID;
                 isArena = name.StartsWith("A:");
                 arenaName = isArena ? name.Replace("A:", "") : "";
                 spawnName = name;
+            }
+            public ZSpawn(bool isArena, string zoneID, string spawnName, string arenaName) {
+                this.isArena = isArena;
+                this.zoneID = zoneID;
+                this.spawnName = spawnName;
+                this.arenaName = arenaName;
+            }
+            public ZSpawn setDescription(string desc) {
+                this.arenaDescription = desc;
+                return this;
             }
         }
 
@@ -57,7 +71,12 @@ namespace Oxide.Plugins
                 if (!toArena) {
                     List<Vector3> success = Spawns?.Call("LoadSpawnFile", args[1]) as List<Vector3>;
                     if (success != null && success.Count > 0) {
-                        zoneToSpawn.Add(new ZSpawn(args[0], args[1]));
+                        string desc = string.Empty;
+                        ZSpawn zspawn = new ZSpawn(args[0], args[1]);
+                        if (args.Length == 3) {
+                            zspawn.setDescription(args[2]);
+                        }
+                        zoneToSpawn.Add(zspawn);
                         SendReply(player, "Link saved");
                     } else {
                         SendReply(player, $"Spawn file {args[1]} either contains no spawns, or doesn't exist.");
@@ -159,12 +178,18 @@ namespace Oxide.Plugins
         bool ContainsZone(string ZoneID) => zoneToSpawn.FindAll(x => x.zoneID == ZoneID).Count > 0;
 
         private Dictionary<Vector3, string> GetAllZonesForFloatingText() {
-            List<ZSpawn> spawns = zoneToSpawn.FindAll(x => x.isArena);
+            List<ZSpawn> spawns = zoneToSpawn.FindAll(x => x.isArena || !x.arenaDescription.IsNullOrEmpty());
             Dictionary<Vector3, string> spawnsRet = new Dictionary<Vector3, string>();
+            Dictionary<string, string> games = Interface.Call("GetAllGames") as Dictionary<string, string>;
+
             foreach (ZSpawn zs in zoneToSpawn) {
+                var arenaName = zs.arenaName;
+                games.TryGetValue(zs.arenaName, out arenaName);
+                arenaName = zs.arenaDescription.IsNullOrEmpty() ? arenaName : zs.arenaDescription;
+
                 Vector3 zoneLoc = (Vector3)ZoneManager.Call("GetZoneLocation", zs.zoneID);
                 Vector3 zoneLocWithOff = zoneLoc + new Vector3(0f, 1f, 0f);
-                spawnsRet.Add(zoneLocWithOff, zs.arenaName);
+                spawnsRet.Add(zoneLocWithOff, arenaName);
             }
             return spawnsRet;
         }
@@ -178,9 +203,13 @@ namespace Oxide.Plugins
         }
 
         void LoadSpawnData() {
-            try { 
-            zoneToSpawn = Interface.Oxide.DataFileSystem.ReadObject<List<ZSpawn>>($"ZoneTeleport");
-            } catch (Exception e) { }
+            try {
+                zoneToSpawn = Interface.Oxide.DataFileSystem.ReadObject<List<ZSpawn>>($"ZoneTeleport");
+            } catch (Exception e) {
+                PrintError("Configuration file is corrupt! Check your config file at https://jsonlint.com/");
+                PrintError(e.Message.ToString());
+                PrintError(e.StackTrace);
+            }
         }
         #endregion
     }

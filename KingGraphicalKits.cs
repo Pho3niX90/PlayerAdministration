@@ -306,37 +306,37 @@ namespace Oxide.Plugins {
             var numBlock = TimeSpan.FromSeconds(kit.block);
             var strBlock = string.Empty;
             if (numBlock.Days > 0) {
-                strBlock += $"{numBlock.Days} d ";
+                strBlock += $"{numBlock.Days}d ";
             }
 
             if (numBlock.Hours > 0) {
-                strBlock += $"{numBlock.Hours} h ";
+                strBlock += $"{numBlock.Hours}h ";
             }
 
             if (numBlock.Minutes > 0) {
-                strBlock += $"{numBlock.Minutes} m ";
+                strBlock += $"{numBlock.Minutes}m ";
             }
 
             if (numBlock.Seconds > 0) {
-                strBlock += $"{numBlock.Seconds} s ";
+                strBlock += $"{numBlock.Seconds}s ";
             }
 
             var numCooldown = TimeSpan.FromSeconds(kit.cooldown);
             var strCooldown = string.Empty;
             if (numCooldown.Days > 0) {
-                strCooldown += $"{numCooldown.Days} d ";
+                strCooldown += $"{numCooldown.Days}d ";
             }
 
             if (numCooldown.Hours > 0) {
-                strCooldown += $"{numCooldown.Hours} h ";
+                strCooldown += $"{numCooldown.Hours}h ";
             }
 
             if (numCooldown.Minutes > 0) {
-                strCooldown += $"{numCooldown.Minutes} m ";
+                strCooldown += $"{numCooldown.Minutes}m ";
             }
 
             if (numCooldown.Seconds > 0) {
-                strCooldown += $"{numCooldown.Seconds} s ";
+                strCooldown += $"{numCooldown.Seconds}s ";
             }
 
             strBlock = string.IsNullOrEmpty(strBlock) ? GetMessage(Message.None, player.UserIDString) : strBlock;

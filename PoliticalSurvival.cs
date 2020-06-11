@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("PoliticalSurvival", "Pho3niX90", "0.9.0")]
+    [Info("PoliticalSurvival", "Pho3niX90", "0.9.11")]
     [Description("Political Survival - Become the ruler, tax your subjects and keep them in line!")]
     class PoliticalSurvival : RustPlugin
     {
@@ -326,7 +326,7 @@ namespace Oxide.Plugins
             Timers.Clear();
         }
 
-        void OnPlayerInit(BasePlayer player) {
+        void OnPlayerConnected(BasePlayer player) {
             if (config.showWelcomeMsg) PrintToChat(player.displayName + " " + GetMsg("PlayerConnected") + " " + ruler.GetRealmName());
             if (currentRuler != null && ruler.userId == currentRuler.userID) {
                 rulerOfflineAt = 0;
@@ -1074,9 +1074,9 @@ namespace Oxide.Plugins
 
             public int taxMin = 0;
             public int taxMax = 15;
-            public int reasignAfterMinutes = 5;
             //public TaxSource taxSource = new TaxSource().createDefault();
             public ulong taxBoxSkinId = 1482844040;
+            public int reasignAfterMinutes = 5;
             public bool reasignOnAfk = true;
 
             public int worldSize = ConVar.Server.worldsize;

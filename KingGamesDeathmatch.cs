@@ -1,11 +1,14 @@
+
 using Newtonsoft.Json;
 using Oxide.Core;
 using Oxide.Core.Plugins;
 using Oxide.Game.Rust.Cui;
+using Steamworks;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Xml.Schema;
 using UnityEngine;
 
 namespace Oxide.Plugins
@@ -15,6 +18,7 @@ namespace Oxide.Plugins
     public class KingGamesDeathmatch : RustPlugin
     {
         [PluginReference] Plugin Spawns;
+        [PluginReference] Plugin Loadoutless;
         #region Vars
         private const int autoBalanceMax = 1;
         private static KingGamesDeathmatch plugin;
@@ -22,6 +26,7 @@ namespace Oxide.Plugins
         string panelColor = "0 0 0 0.5";//"1 0.5 0 0";
         string panelColor2 = "1.0 0.8 0 0.8";//"1 0.5 0 1";
         private static List<string> teamColors = new List<string>();
+
 
         public enum MemberType
         {
@@ -61,10 +66,15 @@ namespace Oxide.Plugins
             RemoveAllGames();
         }
 
-        void OnPlayerDeath(BasePlayer player, HitInfo info) {
+        object OnPlayerDeath(BasePlayer player, HitInfo info) {
+            if (info == null || info.Initiator == null) {
+                Puts("Deny death");
+                return "nope";
+            }
             BasePlayer attacker = info?.InitiatorPlayer;
             Puts($"Player {player.displayName} has died. Killed by {attacker?.displayName} {attacker == null}");
             MarkDead(player);
+            return null;
         }
         #endregion
 
@@ -88,7 +98,7 @@ namespace Oxide.Plugins
             RemoveAllGames();
 
             timer.Once(1f, () => {
-                foreach (var def in config.definitions) {
+                foreach (var def in config.gConfigs) {
                     if (def.enabled) {
                         var obj = new GameObject().AddComponent<GameController>();
                         obj.Setup(def);
@@ -104,7 +114,7 @@ namespace Oxide.Plugins
             if (obj != null) return;
 
             foreach (var game in UnityEngine.Object.FindObjectsOfType<GameController>()) {
-                if (string.Equals(game.definition.shortname, name, StringComparison.OrdinalIgnoreCase)) {
+                if (string.Equals(game.gConfig.shortname, name, StringComparison.OrdinalIgnoreCase)) {
                     game.PlayerJoin(player, teamNumber);
                 }
             }
@@ -131,8 +141,8 @@ namespace Oxide.Plugins
         }
 
         private static void CleanArena(GameController gControl) {
-            Vector3 t1 = plugin.GetFirstSpawnPoint(plugin.LoadSpawnpoints(gControl.definition.team1Spawn));
-            Vector3 t2 = plugin.GetFirstSpawnPoint(plugin.LoadSpawnpoints(gControl.definition.team2Spawn));
+            Vector3 t1 = plugin.GetFirstSpawnPoint(plugin.LoadSpawnpoints(gControl.gConfig.team1Spawn));
+            Vector3 t2 = plugin.GetFirstSpawnPoint(plugin.LoadSpawnpoints(gControl.gConfig.team2Spawn));
 
             Vector3 midPoint = (t1 + t2) / 2;
             float distance = Vector3.Distance(t1, t2) + 10;
@@ -144,8 +154,11 @@ namespace Oxide.Plugins
                 if (entity.IsValid() && entity.OwnerID != 0) {
                     BasePlayer owner = BasePlayer.FindByID(entity.OwnerID);
                     GamePlayer player = plugin.GetPlayer(owner);
-                    if (owner == null || player == null || gControl.allPlayersIncSpec.Contains(player) || !owner.IsConnected)
-                        if (!(entity is BasePlayer)) entity?.Kill();
+                    if (owner == null || player == null || !gControl.allPlayersIncSpec.Contains(player)) continue;
+                    if (!(entity is BasePlayer)) {
+                        plugin.Puts($"Killing a {entity?.GetType().Name}");
+                        entity?.Kill();
+                    }
                 }
             }
         }
@@ -160,10 +173,11 @@ namespace Oxide.Plugins
         #endregion
 
         #region Scores
-        private void OnEntityTakeDamage(BasePlayer player, HitInfo info) {
-            if (info == null || info.damageTypes.Total() < 1) return;
+        private object OnEntityTakeDamage(BasePlayer player, HitInfo info) {
+            if (info == null) return true;
             var initiator = plugin.GetPlayer(info?.InitiatorPlayer);
             if (initiator != null) initiator.damage += Convert.ToInt32(info.damageTypes.Total());
+            return null;
         }
 
         private void OnEntityDeath(BasePlayer player, HitInfo info) {
@@ -231,8 +245,12 @@ namespace Oxide.Plugins
                 }
             });
 
-            AddTeamPanel(containerTop, controller.team1);
-            AddTeamPanel(containerTop, controller.team2);
+            if (controller.gConfig.tournament) {
+                AddTournamentPanel(containerTop, controller);
+            } else {
+                AddTeamPanel(containerTop, controller.team1);
+                AddTeamPanel(containerTop, controller.team2);
+            }
 
             // Main panel
             containerBottomLeft.Add(new CuiElement {
@@ -360,6 +378,287 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player.original, containerTop);
             CuiHelper.AddUi(player.original, containerBottomLeft);
             CuiHelper.AddUi(player.original, containerBottomRight);
+        }
+        private void AddTournamentPanel(CuiElementContainer container, GameController controller) {
+            var parent = elemMainTop + ".team.tournament";
+            var leftScore = parent + ".score.left";
+            var rightScore = parent + ".score.right";
+            var leftIamge = parent + ".image.left";
+            var rightName = parent + ".name.right";
+            var leftName = parent + ".name.left";
+            var rightImage = parent + ".image.right";
+            var midTimer = parent + ".mid.timer";
+            var midRound = parent + ".mid.round";
+
+            var leftColor = "1 0 0 0.9";
+            var rightColor = "0 0 1 0.9";
+
+            container.Add(new CuiElement {
+                Name = parent,
+                Parent = elemMainTop,
+                Components =
+                {
+                    new CuiImageComponent
+                    {
+                        Color = "0.0 0.0 0.5 0.7"
+                    },
+                    new CuiRectTransformComponent {
+                        AnchorMin = "0.5 0.90",
+                        AnchorMax = "0.5 0.90",
+                        OffsetMin = $"-210 -20",
+                        OffsetMax = $"210 20"
+                    }
+                }
+            });
+            // score panel images
+            //container.Add(new CuiElement {
+            //    Name = leftIamge,
+            //    Parent = parent,
+            //    Components =
+            //    {
+            //        new CuiImageComponent
+            //        {
+            //            Color = "0 0 0.2 0.6"
+            //        },
+            //        new CuiRectTransformComponent {
+            //            AnchorMin = "0 0",
+            //            AnchorMax = "0 0",
+            //            OffsetMin = $"0 0",
+            //            OffsetMax = $"40 40"
+            //        }
+            //    }
+            //});
+            //container.Add(new CuiElement {
+            //    Name = rightImage,
+            //    Parent = parent,
+            //    Components =
+            //    {
+            //        new CuiImageComponent
+            //        {
+            //            Color = "0 0 0.2 0.6"
+            //        },
+            //        new CuiRectTransformComponent {
+            //            AnchorMin = "1 0",
+            //            AnchorMax = "1 0",
+            //            OffsetMin = $"-40 0",
+            //            OffsetMax = $"0 40"
+            //        }
+            //    }
+            //});
+
+            // score panel
+            container.Add(new CuiElement {
+                Name = leftScore,
+                Parent = parent,
+                Components =
+                {
+                    new CuiImageComponent
+                    {
+                        Color = "0 0 0.2 0.6"
+                    },
+                    new CuiRectTransformComponent {
+                        AnchorMin = "0.5 0",
+                        AnchorMax = "0.5 0",
+                        OffsetMin = $"-70 0",
+                        OffsetMax = $"-30 40"
+                    }
+                }
+            });
+            container.Add(new CuiElement {
+                Name = rightScore,
+                Parent = parent,
+                Components =
+                {
+                    new CuiImageComponent
+                    {
+                        Color = "0 0 0.2 0.6"
+                    },
+                    new CuiRectTransformComponent {
+                        AnchorMin = "0.5 0",
+                        AnchorMax = "0.5 0",
+                        OffsetMin = $"30 0",
+                        OffsetMax = $"70 40"
+                    }
+                }
+            });
+
+            // name panels            
+            container.Add(new CuiElement {
+                Name = leftName,
+                Parent = leftScore,
+                Components =
+                {
+                new CuiImageComponent {
+                    Color = "0 0 0.2 0.3"
+                },
+                    new CuiRectTransformComponent {
+                        AnchorMin = "0 0.0",
+                        AnchorMax = "0 0.0",
+                        OffsetMin = $"-140 0",
+                        OffsetMax = $"-2 40"
+                    }
+                }
+            });
+            container.Add(new CuiElement {
+                Name = rightName,
+                Parent = rightScore,
+                Components =
+                {
+               new CuiImageComponent {
+                   Color = "0 0 0.2 0.3"
+               },
+                   new CuiRectTransformComponent {
+                       AnchorMin = "1 0.0",
+                       AnchorMax = "1 0.0",
+                       OffsetMin = $"2 0",
+                       OffsetMax = $"140 40"
+                   }
+               }
+            });
+
+            //scores
+            container.Add(new CuiElement {
+                Parent = leftScore,
+                Components =
+                {
+                    new CuiTextComponent
+                    {
+                        Text = $"7",
+                        Color = leftColor,
+                        Align = TextAnchor.MiddleCenter,
+                        FontSize = 30
+                    },
+                    new CuiRectTransformComponent
+                    {
+                        AnchorMin = "0.5 0.5",
+                        AnchorMax = "0.5 0.5",
+                        OffsetMin = $"-28 -28",
+                        OffsetMax = $"28 28"
+                    },
+                }
+            });
+            container.Add(new CuiElement {
+                Parent = rightScore,
+                Components =
+                {
+                    new CuiTextComponent
+                    {
+                        Text = $"12",
+                        Color = rightColor,
+                        Align = TextAnchor.MiddleCenter,
+                        FontSize = 30
+                    },
+                    new CuiRectTransformComponent
+                    {
+                        AnchorMin = "0.5 0.5",
+                        AnchorMax = "0.5 0.5",
+                        OffsetMin = $"-28 -28",
+                        OffsetMax = $"28 28"
+                    },
+                }
+            });
+
+            //team names
+            container.Add(new CuiElement {
+                Parent = leftName,
+                Components =
+                {
+                    new CuiTextComponent
+                    {
+                        Text = $"Team A",
+                        Color = leftColor,
+                        Align = TextAnchor.MiddleCenter,
+                        FontSize = 25
+                    },
+                    new CuiRectTransformComponent
+                    {
+                        AnchorMin = "0 0",
+                        AnchorMax = "0 0",
+                        OffsetMin = $"2 0",
+                        OffsetMax = $"138 40"
+                    },
+                }
+            });
+            container.Add(new CuiElement {
+                Parent = rightName,
+                Components =
+                {
+                    new CuiTextComponent
+                    {
+                        Text = $"Team B",
+                        Color = rightColor,
+                        Align = TextAnchor.MiddleCenter,
+                        FontSize = 25
+                    },
+                    new CuiRectTransformComponent
+                    {
+                        AnchorMin = "0 0",
+                        AnchorMax = "0 0",
+                        OffsetMin = $"2 0",
+                        OffsetMax = $"138 40"
+                    },
+                }
+            });
+
+            //mid info
+            container.Add(new CuiElement {
+                Name = midTimer,
+                Parent = parent,
+                Components =
+                {
+                    new CuiImageComponent
+                    {
+                        Color = "0 0 0.2 0.3"
+                    },
+                    new CuiRectTransformComponent {
+                        AnchorMin = "0.5 0",
+                        AnchorMax = "0.5 0",
+                        OffsetMin = $"-28 0",
+                        OffsetMax = $"28 40"
+                    }
+                }
+            });
+            container.Add(new CuiElement {
+                Parent = midTimer,
+                Components =
+                {
+                    new CuiTextComponent
+                    {
+                        Text = $"13:41",
+                        Color = "1 1 1 1",
+                        Align = TextAnchor.MiddleCenter,
+                        FontSize = 20
+                    },
+                    new CuiRectTransformComponent
+                    {
+                        AnchorMin = "0.5 0.2",
+                        AnchorMax = "0.5 0.2",
+                        OffsetMin = $"-28 0",
+                        OffsetMax = $"28 40"
+                    },
+                }
+            });
+            container.Add(new CuiElement {
+                Parent = midTimer,
+                Components =
+                {
+                    new CuiTextComponent
+                    {
+                        Text = $"Round 13/30",
+                        Color = "1 1 1 1",
+                        Align = TextAnchor.MiddleCenter,
+                        FontSize = 8
+                    },
+                    new CuiRectTransformComponent
+                    {
+                        AnchorMin = "0.5 0.05",
+                        AnchorMax = "0.5 0.05",
+                        OffsetMin = $"-28 0",
+                        OffsetMax = $"28 15"
+                    },
+                }
+            });
+
         }
 
         private void AddTeamPanel(CuiElementContainer container, GameTeam team) {
@@ -594,7 +893,14 @@ namespace Oxide.Plugins
                 colorON = "0.8 0 0 0.8",
                 command = "api.deathmatch friendlyfire"
             },
-//            new ButtonComplex // 6
+ //           new ButtonComplex // 7
+ //           {
+ //               layer = "TIME LIMIT",
+ //               colorOFF = "0 0.8 0 0.8",
+ //               colorON = "0.8 0 0 0.8",
+ //               command = "api.deathmatch timelimit"
+ //           },
+//            new ButtonComplex // 8
 //            {
 //                layer = "TIME",
 //                textON = "DAY",
@@ -762,13 +1068,14 @@ namespace Oxide.Plugins
             var lastY = startY;
 
             var buttons = buttonsSettingsGeneral.ToArray();
-            buttons[0].isOn = controller.definition.arenaPublic;
-            buttons[1].isOn = controller.definition.team1Public;
-            buttons[2].isOn = controller.definition.team2Public;
-            buttons[3].isOn = controller.definition.spectatorsAllowed;
-            buttons[4].isOn = controller.definition.headshotOnly;
-            buttons[5].isOn = controller.definition.autoBalance;
-            buttons[6].isOn = controller.definition.friendlyFire;
+            buttons[0].isOn = controller.gConfig.arenaPublic;
+            buttons[1].isOn = controller.gConfig.team1Public;
+            buttons[2].isOn = controller.gConfig.team2Public;
+            buttons[3].isOn = controller.gConfig.spectatorsAllowed;
+            buttons[4].isOn = controller.gConfig.headshotOnly;
+            buttons[5].isOn = controller.gConfig.autoBalance;
+            buttons[6].isOn = controller.gConfig.friendlyFire;
+            //buttons[7].isOn = controller.gConfig.roundHasTimeLimit;
 
             foreach (var button in buttonsSettingsGeneral) {
                 // Name
@@ -1079,7 +1386,7 @@ namespace Oxide.Plugins
         }
 
         private void AddPlayersPage(CuiElementContainer container, GameController controller) {
-            var startX = 500;
+            var startX = 10;
             var startY = 220;
             var offsetX = 5;
             var offsetY = 5;
@@ -1109,17 +1416,17 @@ namespace Oxide.Plugins
                     },
                     RectTransform =
                     {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin = $"{lastX - sizeX} {lastY - sizeY / 2}",
-                        OffsetMax = $"{lastX} {lastY + sizeY / 2}"
+                        AnchorMin = "0.0 0.5",
+                        AnchorMax = "0.0 0.5",
+                        OffsetMin = $"{lastX} {lastY - sizeY / 2}",
+                        OffsetMax = $"{lastX + sizeX} {lastY + sizeY / 2}"
                     }
                 }, elemMainSettings);
 
-                lastX -= sizeX + offsetX;
+                lastX += sizeX + offsetX;
 
                 if (++i % 5 == 0) {
-                    lastY -= sizeY + offsetY;
+                    lastY += sizeY + offsetY;
                     lastX = startX;
                 }
             }
@@ -1132,16 +1439,12 @@ namespace Oxide.Plugins
         private void cmdAPICommand(ConsoleSystem.Arg arg) {
             var bPlayer = arg.Player();
             var player = GetPlayer(bPlayer);
-            if (player == null) {
-                return;
-            }
+            if (player == null) return;
 
             var controller = player.team.controller;
-            if (controller.owner != player) {
-                return;
-            }
+            if (controller.owner != player) return;
 
-            var def = controller.definition;
+            var def = controller.gConfig;
 
             var action = arg.Args?.Length > 0 ? arg.Args[0] : "null";
             var arg2 = arg.Args?.Length > 1 ? arg.Args[1] : "null";
@@ -1175,6 +1478,14 @@ namespace Oxide.Plugins
 
                 case "friendlyfire":
                     def.friendlyFire = !def.friendlyFire;
+                    break;
+
+                case "tournament":
+                    def.tournament = !def.tournament;
+                    break;
+
+                case "timelimit":
+                    def.roundHasTimeLimit = !def.roundHasTimeLimit;
                     break;
 
                 case "kit":
@@ -1229,22 +1540,16 @@ namespace Oxide.Plugins
 
                 case "changeteam":
                     var targetChange = controller.allPlayers.FirstOrDefault(x => x.original.UserIDString == arg2);
-                    if (targetChange != null) {
-                        controller.ChangeTeam(targetChange, true);
-                    }
+                    if (targetChange != null) controller.ChangeTeam(targetChange, true);
                     break;
 
                 case "owner":
                     var targetOwner = controller.allPlayers.FirstOrDefault(x => x.original.UserIDString == arg2);
-                    if (targetOwner != null) {
-                        controller.owner = targetOwner;
-                    }
+                    if (targetOwner != null) controller.owner = targetOwner;
                     break;
             }
 
-            if (player.lastPage == 0) {
-                player.lastPage = 1;
-            }
+            if (player.lastPage == 0) player.lastPage = 1;
 
             UIOpenSettings(player, player.lastPage);
         }
@@ -1253,25 +1558,23 @@ namespace Oxide.Plugins
         private void cmdCommand(ConsoleSystem.Arg arg) {
             var bPlayer = arg.Player();
             var player = GetPlayer(bPlayer);
-            if (player == null) {
-                return;
-            }
+            if (player == null) return;
 
             player.team.controller.ChangeTeam(player);
         }
 
         #endregion
 
-        #region Configuration | 2.0.0
+        #region Configuration
 
         private static ConfigData config = new ConfigData();
 
         private class ConfigData
         {
-            [JsonProperty(PropertyName = "Definitions")]
-            public GameDefinition[] definitions =
+            [JsonProperty(PropertyName = "Configs")]
+            public GameConfig[] gConfigs =
             {
-                new GameDefinition
+                new GameConfig
                 {
                     shortname = "deathmatch.first",
                     description = "First deathmatch arena, flat, for 2 teams"
@@ -1294,7 +1597,7 @@ namespace Oxide.Plugins
             };
         }
 
-        public class GameDefinition
+        public class GameConfig
         {
             [JsonProperty(PropertyName = "Shortname")]
             public string shortname = string.Empty;
@@ -1324,6 +1627,9 @@ namespace Oxide.Plugins
             [JsonIgnore] public bool headshotOnly = false;
             [JsonIgnore] public bool autoBalance = true;
             [JsonIgnore] public bool friendlyFire = true;
+            [JsonIgnore] public bool tournament = false;
+            [JsonIgnore] public bool roundHasTimeLimit = false;
+            [JsonIgnore] public int roundTimeLimit = 900;
             [JsonIgnore] public List<string> banned = new List<string>();
         }
 
@@ -1354,13 +1660,10 @@ namespace Oxide.Plugins
             config = new ConfigData();
         }
 
-        protected override void SaveConfig() {
-            Config.WriteObject(config);
-        }
-
+        protected override void SaveConfig() => Config.WriteObject(config);
         #endregion
 
-        #region Language | 2.0.0
+        #region Language
 
         private Dictionary<object, string> langMessages = new Dictionary<object, string>
         {
@@ -1413,9 +1716,7 @@ namespace Oxide.Plugins
             StartingIn,
         }
 
-        protected override void LoadDefaultMessages() {
-            lang.RegisterMessages(langMessages.ToDictionary(x => x.Key.ToString(), y => y.Value), this);
-        }
+        protected override void LoadDefaultMessages() => lang.RegisterMessages(langMessages.ToDictionary(x => x.Key.ToString(), y => y.Value), this);
 
         string GetMessage(Message key, params object[] args) {
             var msg = lang.GetMessage(key.ToString(), this);
@@ -1462,7 +1763,7 @@ namespace Oxide.Plugins
         #region Scripts
         public class GameController : MonoBehaviour
         {
-            public GameDefinition definition;
+            public GameConfig gConfig;
             public GameTeam team1 = new GameObject().AddComponent<GameTeam>();
             public GameTeam team2 = new GameObject().AddComponent<GameTeam>();
             public GameTeam noteam = new GameObject().AddComponent<GameTeam>();
@@ -1470,7 +1771,7 @@ namespace Oxide.Plugins
             public int countSpectators => noteam.countTotal;
             public int countReady => team1.countReady + team2.countReady;
             public int countTotal => team1.countTotal + team2.countTotal;
-            public int freeSlots => definition.maxPlayers - countTotal;
+            public int freeSlots => gConfig.maxPlayers - countTotal;
             public GamePlayer[] allPlayers => team1.getPlayers.Concat(team2.getPlayers).ToArray();
             public GamePlayer[] allPlayersIncSpec => allPlayers.Concat(noteam.getPlayers).ToArray();
             public bool gameInProgress;
@@ -1478,14 +1779,13 @@ namespace Oxide.Plugins
 
             // Core
 
-            public void Setup(GameDefinition iDefinition) {
-                definition = iDefinition;
-            }
+            public void Setup(GameConfig gConfig) => this.gConfig = gConfig;
+
 
             private void Start() {
-                noteam.Setup(this, definition.spectatorsSpawn, 0);
-                team1.Setup(this, definition.team1Spawn, 1);
-                team2.Setup(this, definition.team2Spawn, 2);
+                noteam.Setup(this, gConfig.spectatorsSpawn, 0);
+                team1.Setup(this, gConfig.team1Spawn, 1);
+                team2.Setup(this, gConfig.team2Spawn, 2);
                 InvokeRepeating(nameof(CheckGameStatus), 5, 5);
             }
 
@@ -1506,16 +1806,18 @@ namespace Oxide.Plugins
                 if (countTotal < 1) {
                     team1.wins = 0;
                     team2.wins = 0;
-                    definition.banned.Clear();
-                    definition.arenaPublic = true;
+                    gConfig.banned.Clear();
+                    gConfig.arenaPublic = true;
                 }
 
                 if (owner == null) {
                     owner = allPlayers.FirstOrDefault();
                 }
+
                 if (team1.owner == null) {
                     team1.owner = team1.getPlayers.FirstOrDefault();
                 }
+
                 if (team2.owner == null) {
                     team2.owner = team2.getPlayers.FirstOrDefault();
                 }
@@ -1530,7 +1832,6 @@ namespace Oxide.Plugins
             private void CheckForWinners() {
                 if (team1.countAlive > 0 && team2.countAlive > 0) return;
 
-
                 gameInProgress = false;
 
                 if (team1.countAlive > 0) {
@@ -1541,7 +1842,7 @@ namespace Oxide.Plugins
 
                 var num = team1.countAlive > 0 ? 1 : 2;
                 plugin.timer.Once(0.1f, () => {
-                    SendAll(Message.TeamWon, plugin.TeamColor(num));
+                    SendAll(Message.TeamWon, plugin.TeamColor(num), num);
 
                     foreach (GamePlayer pl in allPlayersIncSpec) {
                         var msg = plugin.GetMessage(Message.TeamWon, plugin.TeamColor(num), num);
@@ -1604,23 +1905,23 @@ namespace Oxide.Plugins
 
             public void PlayerJoin(BasePlayer player, int teamNumber) {
 
-                if (definition.banned.Contains(player.UserIDString)) {
+                if (gConfig.banned.Contains(player.UserIDString)) {
                     player.ChatMessage("You are banned :(");
                     return;
                 }
 
-                if (!definition.arenaPublic || !(definition.team1Public && definition.team2Public && definition.spectatorsAllowed)) {
+                if (!gConfig.arenaPublic || !(gConfig.team1Public && gConfig.team2Public && gConfig.spectatorsAllowed)) {
                     plugin.SendMessage(player, Message.Private);
                     return;
                 }
 
                 if (freeSlots < 1) {
                     if (teamNumber > 0) {
-                        if (definition.spectatorsAllowed) {
-                            plugin.SendMessage(player, Message.PlayersLimitChangingToSpectator, definition.maxPlayers, countTotal);
+                        if (gConfig.spectatorsAllowed) {
+                            plugin.SendMessage(player, Message.PlayersLimitChangingToSpectator, gConfig.maxPlayers, countTotal);
                             teamNumber = 0;
                         } else {
-                            plugin.SendMessage(player, Message.PlayersLimit, definition.maxPlayers, countTotal);
+                            plugin.SendMessage(player, Message.PlayersLimit, gConfig.maxPlayers, countTotal);
                             return;
                         }
                     }
@@ -1656,18 +1957,18 @@ namespace Oxide.Plugins
             }
 
             private GameTeam ChooseTeam(GamePlayer player, int teamNumber) {
-                plugin.Puts($"[Scrim,  {definition.shortname}] Team 1: {team1.countTotal}, Team 2: {team2.countTotal} [balance: {definition.autoBalance}]");
+                plugin.Puts($"[Scrim,  {gConfig.shortname}] Team 1: {team1.countTotal}, Team 2: {team2.countTotal} [balance: {gConfig.autoBalance}]");
                 GameTeam desiredTeam = teamNumber == 1 ? team1 : team2;
                 GameTeam balancedTeam = teamNumber == 1 ? team1 : team2;
                 if (teamNumber == 0) return noteam;
-                if (!definition.autoBalance) return desiredTeam;
+                if (!gConfig.autoBalance) return desiredTeam;
 
                 plugin.SendMessage(player.original, Message.AutoBalance);
                 if (Math.Abs(team1.countTotal - team2.countTotal) >= autoBalanceMax) {
 
-                    if (team1.countTotal > team2.countTotal && definition.team2Public) {
+                    if (team1.countTotal > team2.countTotal && gConfig.team2Public) {
                         balancedTeam = team2;
-                    } else if (definition.team1Public) {
+                    } else if (gConfig.team1Public) {
                         balancedTeam = team1;
                     } else {
                         balancedTeam = noteam;
@@ -1703,7 +2004,7 @@ namespace Oxide.Plugins
 
             public int teamNumber;
             public int wins;
-            public string kitName = config.kitsWeapons[0];
+            public string kitName = config.kitsWeapons.Contains("AK") ? "AK" : config.kitsWeapons.First();
             public string kitNameClothing = config.kitTeam1 ?? config.kitTeam2 ?? "";
             public string spawnFile;
             public int countTotal => players.Count;
@@ -1717,7 +2018,7 @@ namespace Oxide.Plugins
                 kitNameClothing = teamNumber == 1 ? config.kitTeam1 : config.kitTeam2;
                 infoSpectator = new RespawnInfo {
                     kitName = config.kitSpectators,
-                    spawnFile = controller.definition.spectatorsSpawn
+                    spawnFile = controller.gConfig.spectatorsSpawn
                 };
                 spawnFile = iSpawnFile;
                 gameTeam = RelationshipManager.Instance.CreateTeam();
@@ -1726,7 +2027,7 @@ namespace Oxide.Plugins
             public void JoinPlayer(GamePlayer player) {
                 players.Add(player);
                 player.ToChat(Message.JoinedTeam, teamNumber);
-                plugin.Puts($"Scrim, {plugin.Version}] Joined team {teamNumber} at {controller.definition.shortname}");
+                plugin.Puts($"Scrim, {plugin.Version}] Joined team {teamNumber} at {controller.gConfig.shortname}");
                 player.team = this;
                 player.type = MemberType.Spectator;
                 player.Reset();
@@ -1779,7 +2080,7 @@ namespace Oxide.Plugins
             public BasePlayer original => player;
             public int lastPage;
 
-            public string currentGame => team.controller.definition.shortname;
+            public string currentGame => team.controller.gConfig.shortname;
             public GameController currentGameContr => team.controller;
             public GameTeam team;
             public MemberType type;
@@ -1832,7 +2133,6 @@ namespace Oxide.Plugins
             }
 
             public void Reset() {
-                ToConsole($"[Games Deathmatch, {currentGame}] ResetPlayer");
                 Interface.CallHook("RefreshPlayer", player);
             }
         }
@@ -1890,10 +2190,10 @@ namespace Oxide.Plugins
             }
 
             if (obj1.team == obj2.team) {
-                return obj1.team.controller.definition.friendlyFire ? "In same team, Friendly Fire ON" : null;
+                return obj1.team.controller.gConfig.friendlyFire ? "In same team, Friendly Fire ON" : null;
             }
 
-            if (obj1.team.controller.definition.headshotOnly) {
+            if (obj1.team.controller.gConfig.headshotOnly) {
                 return !info.isHeadshot ? "Not Headshot" : null;
             }
 
@@ -1903,7 +2203,6 @@ namespace Oxide.Plugins
         private object CanJoinGame(BasePlayer player) // Return text with existing game name
         {
             var obj = GetPlayer(player);
-            Puts("CAnJoin?? " + (obj == null));
             return obj != null ? obj.currentGame : (object)null;
         }
 
@@ -1933,15 +2232,15 @@ namespace Oxide.Plugins
             var dic = new Dictionary<string, string>();
 
             foreach (var value in UnityEngine.Object.FindObjectsOfType<GameController>()) {
-                var key = value.definition.shortname;
+                var key = value.gConfig.shortname;
                 var text = GetMessage(Message.FloatingTextLobbyInfo,
 
                     key,
-                     value.definition.description,
+                     value.gConfig.description,
                      PlayersString(value.allPlayers),
                      value.countTotal.ToString(),
-                     value.definition.maxPlayers.ToString(),
-                    (value.definition.arenaPublic ? "Public" : "Private")
+                     value.gConfig.maxPlayers.ToString(),
+                    (value.gConfig.arenaPublic ? "Public" : "Private")
 
                     );
                 dic.Add(key, text);
@@ -1954,7 +2253,7 @@ namespace Oxide.Plugins
             var dic = new Dictionary<string, string>();
 
             foreach (var value in UnityEngine.Object.FindObjectsOfType<GameController>()) {
-                var key = value.definition.shortname;
+                var key = value.gConfig.shortname;
                 var text = value.team1.countTotal + "|" + value.team2.countTotal;
                 dic.Add(key, text);
                 // {Message.FloatingTextLobbyInfo, "<color=#00ffff>{0}</color>\n\n{1}Current Players\n{2}\n\n{3}/{4} Free slots\n Arena is {5}"},
